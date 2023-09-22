@@ -1,0 +1,1841 @@
+I looked over a few tutorials on Recurrent Neural Networks, using LSTM; however I couldn’t find the one that uses the LSTMCellclass, many used the higher level LSTM class. So I decided to build one character-to-character model, using the lstm cell.
+Problem statement: we want to build an RNN where we would have a sequence of characters as an input and a sequence of characters as an output. You might have seen many of those models built with the use of many libraries, such as Tensorflow/Keras, CNTK, MXNET or Pytorch. This kind of models is used then to sample the top most probable characters based on the previous character in the sequence. Hence, it is a really fun tool to sample text based on the existing text (a book or collection of essays).
+Project Gutenberg is an excellent source of free books by many authors (maybe you can find your favorite there). Many books are available in the .txt format, which is excellent for training C-to-C recurrent models. I used Gorky’s “The Outcasts”.
+As you may have guessed, the resulting text sampled from such RNN will have (or at least should have) syntactic structure and choice of words that you might come across in your training text. This concept is partially described in Black Mirror’s “Be Right Back” episode, where a company provided a digital imitation of a deceased person to people who were in the grievance of the loss. Read this article if you want to learn more about Luka chat-bot, real-life implementation of this concept.
+However, it is important to note that such models can be built using word-to-word models, having the model to predict the most likely word based on the already seen word (since sentences are sequential for both words and characters).
+Model definition: We are going to use a 2 layer LSTM model with 512 hidden nodes in each layer. The idea is to pass a sequence of characters in batches as an input to the model and use the same sequence but shifted by one character as a target. Each character is going to be one-hot encoded, and we are going to add a fully connected layer on top of the output from the LSTM cell to fit the dimension of the output, which is going to be of the size of our vocabulary.
+Main terms:
+Vocabulary — a set of every single character that our text consists of. It will most likely contain many letters and upper case letters, all the syntactic characters and, some time, additional characters, such as “:, -,” and other.
+Size of vocabulary — the length of the vocabulary set. We need this size to define the input size to the LSTM cell. Also, we need this size for the output of the model (output of the fully connected layer that sits on top of the second layer of the LSTM cell); mainly, our targets are one-hot encoded vectors of the vocabulary size in zero’s dimension.
+LSTM cell — this one lays in the core of the model. You may have seen those many times. Here is an excellent diagram by Christopher Olah:
+
+He has an excellent post about the math and intuition behind the LSTM cell and RNN’s in general; you should read it if you haven’t yet.
+The basic idea behind the LSTM cell is that signal flows through the cell in a specific way, defined by input, forget, update and output gates. There are three inputs to the cell at any given step t: input to the cell, hidden vector input and cell state input. There are three outputs from the cell at any given time: new hidden state, new cell state and the output, which in turn is the same as the new hidden state. All of this is described in Christopher’s post.
+Hidden state — vector of size (batch_size, hidden_size). The bigger dimension of the hidden vector — the more robust your model is, in an expense of computational cost. Hidden state vector acts as your short-term memory and is updated by the input at the time step t.
+Cell state — vector of size (batch_size, hidden_size), acts as your long-term memory.
+Layers of LSTM — if we stack the LSTM cells on top of each other, we obtain a layered LSTM model. Technically, we would like to pass the output of the LSTM cell from the first layer as an input to the LSTM cell in the second layer at any given time t. If we do that, we end up building a deeper network.
+LSTM network — now if we pass the hidden state output vector from time t to the hidden state vector input at time t+1 we obtain a sequence of LSTM cells, that form our LSTM model.
+Now let’s get to the code and building the model. As I mentioned, I wanted to build the model, using the LSTM cell class from pytorch library. Also, it is worth mentioning that Keras has a great tool in the utils module: to_categorical. It is a great way to one-hot encode vectors, very intuitive.
+First: we need to read the text into io and encode the text with integers.
+
+    Notice that we re-utilize the same LSTM cell object but in sequential order, passing the hidden and cell states from the previous time step to the current time step cell, while iterating over the input over time steps (one-hot encoded sequence of characters).
+Forth: now we want to define our model object along with the optimizer and the loss function. We are going to use Adam optimizer since it is the most common choice for such tasks. Also, we are going to use the cross-entropy loss as we are going to measure entropy between our output and the targets (which are distributions).
+# compile the network - sequence_len, vocab_size, hidden_dim, batch_size
+net = CharLSTM(sequence_len=128, vocab_size=len(char2int), hidden_dim=512, batch_size=128)
+
+
+        Note: many times you are going to tinker with the dimensions of inputs and outputs since pytorch expects a batch dimension everywhere; hence you are going to do much squeezing and unsqueezing. Also, don’t forget to convert your numpy arrays into torch tensors and back, since we are dealing with integers in the end (you need them to look up actual characters). One more thing: the memory layout sometimes becomes misaligned; therefore you would need to use contiguous at some places to realign the memory.
+Here are some samples the RNN has generated:
+We can see that the resulting sample that I obtained at the 50th epoch doesn’t make much sense; however, we can see that the model has learned a lot: some words, some sentence structure, syntax. Now all we need to do is to tweak the model’s hyper-parameters to make it better.
+The full model can be found here.
+Problems I encountered:
+Some books (texts) have a bizarre character like “ï,” “»” and “¿” buried somewhere in the middle of the text. The problem becomes apparent when you have those characters only in the training set (after separating the data into training and validation data). The size of vocabulary for the validation set becomes short of 1 or 2 characters, and you are forced to pass its vocabulary size as you validate. Not crucial, however very annoying.
+You need text of substantial size to fit the model more or less well. Otherwise, you are going to grossly over-fit or end up regularizing like crazy, hurting the model’s capacity. An excellent and pretty clean piece of data to start practicing with is Anna Karenina by Tolstoy.
+
+Text Generation with Bi-LSTM in PyTorch
+A step-by-step guide to build a text generation model by using PyTorch’s LSTMCells to create a Bi-LSTM model from scratch
+“There is no rule on how to write. Sometimes it comes easily and perfectly: sometimes it’s like drilling rock and then blasting it out with charges” — Ernest Hemingway
+The aim of this blog is to explain the building of an end-to-end model for text generation by implementing a powerful architecture based on LSTMs.
+The blog is divided into the following sections:
+Introduction
+Text preprocessing
+Sequence generation
+Model architecture
+Training phase
+Text generation
+You can find the complete code at: https://github.com/FernandoLpz/Text-Generation-BiLSTM-PyTorch
+Introduction
+Over the years, various proposals have been launched to model natural language, but how is this? what does the idea of “modeling natural language” refer to? We could think that “modeling natural language” refers to the reasoning given to the semantics and syntax that make up the language, in essence, it is, but it goes further.
+Nowadays, the field of Natural Language Processing (NLP) deals with different tasks that refer to reasoning, understanding and modeling of language through different methods and techniques. The field of NLP (Natural Language processing) has been growing extremely fast in this past decade. It has been proposed in plenty of models to solve different NLP tasks from different perspectives. Likewise, the common denominator among the most popular proposals is the implementation of Deep Learning based models.
+As already mentioned, NLP field addresses a huge number of problems, specifically in this blog we will address the problem of text generation by making use of deep learning based models, such as the recurrent neural networks LSTM and Bi-LSTM. Likewise, we will use one of the most sophisticated frameworks today to develop deep learning models, specifically we will use the LSTMCell class from PyTorch to develop the proposed architecture.
+If you want to dig into the mechanics of the LSTM, as well as how it is implemented in PyTorch, take a look at this amazing explanation: From a LSTM Cell to a Multilayer LSTM Network with PyTorch
+Problem statement
+Given a text, a neural network will be fed through character sequences in order to learn the semantics and syntactics of the given text. Subsequently, a sequence of characters will be randomly taken and the next character will be predicted.
+So, let’s get started!
+Text preprocessing
+First, we are going to need a text which we are going to work with. There are different resources where you can find different texts in plain text, I recommend you take a look at the Gutenberg Project.
+In this case, I will use the book called Jack Among the Indians by George Bird Grinnell, the one you can find here: link to the book. So, the first lines of chapter 1 look like:
+The train rushed down the hill, with a long shrieking whistle, and then began to go more and more slowly. Thomas had brushed Jack off and thanked him for the coin that he put in his hand, and with the bag in one hand and the stool in the other now went out onto the platform and down the steps, Jack closely following.
+As you can see, the text contains uppercase, lowercase, line breaks, punctuation marks, etc. What is suggested to do is to try to adapt the text to a form which allows us to handle it in a better way and which mainly reduces the complexity of the model that we are going to develop. So we are going to transform each character to its lowercase form. Also, it is advisable to handle the text as a list of characters, that is, instead of having a “big string of characters”, we will have a list of characters. The purpose of having the text as a sequence of characters is for better handling when generating the sequences which the model will be fed with (we will see this in the next section in detail).
+So let’s do it!
+
+    As we can see, in line 2 we are defining the characters to be used, all other symbols will be discarded, we only keep the “white space” symbol. In lines 6 and 10 we are reading the raw file and transforming it into its lowercase form. In the loops of lines 14 and 19 we are creating and string which represents the entire book and generating a list of characters. In line 23 we are filtering the text list by only keeping the letters defined in line 2.
+So, once the text is loaded and preprocessed, we will go from having a text like this:
+text = "The train rushed down the hill."
+to have a list of characters like this:
+text = ['t','h','e',' ','t','r','a','i','n',' ','r','u','s','h','e','d',' ','d','o','w','n',
+' ','t','h','e',' ','h','i','l','l']
+Well, we already have the full text as a list of characters. As it’s well known, we cannot introduce raw characters directly to a neural network, we require a numerical representation, therefore, we need to transform each character to a numerical representation. For this, we are going to create a dictionary which will help us to save the equivalence “character-index” and “index-character”.
+So, let’s do it!
+def create_dictionary(text):
+ 
+  char_to_idx = dict()
+  idx_to_char = dict()
+  
+  idx = 0
+  for char in text:
+    if char not in char_to_idx.keys():
+      
+      # Build dictionaries
+      char_to_idx[char] = idx
+      idx_to_char[idx] = char
+      idx += 1
+				
+	return char_to_idx, idx_to_char
+
+	As we can notice, in lines 11 and 12 the “char-index” and “index-char” dictionaries are created.
+So far we have already shown how to load the text and save it in the form of a list of characters, we have also created a couple of dictionaries that will help us to encode-decode each character. Now, it is time to see how we will generate the sequences that will be introduced to the model. So, let’s go to the next section!
+Sequence generation
+The way in which the sequences are generated depends entirely on the type of model that we are going to implement. As already mentioned, we will use recurrent neural networks of the LSTM type, which receive data sequentially (time steps).
+For our model, we need to form sequences of a given length which we will call “window”, where the character to predict (the target) will be the character next to the window. Each sequence will be made up of the characters included in the window. To form a sequence, the window is sliced one character to the right at a time. The character to predict will always be the character following the window. We can clearly see this process in Figure 1.
+Well, so far we have seen how to generate the character sequences in a simple way. Now we need to transform each character to its respective numerical format, for this we will use the dictionary generated in the preprocessing phase. This process can be visualized in Figure 2.
+Great, now we know how to generate the character sequences using a window that slides one character at a time and how we transform the characters into a numeric format, the following code snippet shows the process described.
+
+    Fantastic, now we know how to preprocess raw text, how to transform it into a list of characters and how to generate sequences in a numeric format. Now we go to the most interesting part, the model architecture.
+Model architecture
+As you already read in the title of this blog, we are going to make use of Bi-LSTM recurrent neural networks and standard LSTMs. Essentially, we make use of this type of neural network due to its great potential when working with sequential data, such as the case of text-type data. Likewise, there are a large number of articles that refer to the use of architectures based on recurrent neural networks (e.g. RNN, LSTM, GRU, Bi-LSTM, etc.) for text modeling, specifically for text generation [1, 2].
+The architecture of the proposed neural network consists of an embedding layer followed by a Bi-LSTM as well as a LSTM layer. Right after, the latter LSTM is connected to a linear layer.
+Methodology
+The methodology consists of passing each sequence of characters to the embedding layer, this to generate a representation in the form of a vector for each element that makes up the sequence, therefore we would be forming a sequence of embedded characters. Subsequently, each element of the sequence of embedded characters will be passed to the Bi-LSTM layer. Subsequently, a concatenation of each output of the LSTMs that make up the Bi-LSTM (the forward LSTM and the backward LSTM) will be generated. Right after, each forward + backward concatenated vector will be passed to the LSTM layer from which the last hidden state will be taken to feed the linear layer. This last linear layer will have as activation function a Softmax function in order to represent the probability of each character. Figure 3 show the described methodology.
+
+Fantastic, so far we have already explained the architecture of the model for text generation as well as the implemented methodology. Now we need to know how to do all this with the PyTorch framework, but first, I would like to briefly explain how the Bi-LSTM and the LSTM work together to later see how we would do it in code, so let’s see how a Bi-LSTM network works.
+Bi-LSTM & LSTM
+The key difference between a standard LSTM and a Bi-LSTM is that the Bi-LSTM is made up of 2 LSTMs, better known as “forward LSTM” and “backward LSTM”. Basically, the forward LSTM receives the sequence in the original order, while the backward LSTM receives the sequence in reverse. Subsequently and depending on what is intended to be done, each hidden state for each time step of both LSTMs can be joined or only the last states of both LSTMs will be operated. In the proposed model, we suggest joining both hidden states for each time step.
+Perfect, now we understand the key difference between a Bi-LSTM and an LSTM. Going back to the example we are developing, Figure 4 represents the evolution of each sequence of characters when they are passed through the model.
+Great, once everything about the interaction between Bi-LSTM and LSTM is clear, let’s see how we do this in code using only LSTMCells from the great PyTorch framework.
+So, first let’s understand how we make the constructor of the TextGenerator class, let’s take a look at the following code snippet:
+
+        As we can see, from lines 6 to 10 we define the parameters that we will use to initialize each layer of the neural network. It is important to mention that input_size is equal to the size of the vocabulary (that is, the number of elements that our dictionary generated in the preprocessing contains). Likewise, the number of classes to be predicted is also the same size as the vocabulary and sequence_length refers to the size of the window.
+On the other hand, in lines 20 and 21 we are defining the two LSTMCells that make up the Bi-LSTM (forward and backward). In line 24 we define the LSTMCell that will be fed with the output of the Bi-LSTM. It is important to mention that the hidden state size is double compared to the Bi-LSTM, this is because the output of the Bi-LSTM is concatenated. Later on line 27 we define the linear layer, which will be filtered later by the softmax function.
+Once the constructor is defined, we need to create the tensors that will contain the cell state (cs) and hidden state (hs) for each LSTM. So, we proceed to do it as follows:
+
+Fantastic, once the tensors that will contain the hidden state and cell state have been defined, it is time to show how the assembly of the entire architecture is done, let’s go for it!
+First, let’s take a look at the following code snippet:
+# From idx to embedding
+out = self.embedding(x)
+
+# Prepare the shape for LSTM Cells
+out = out.view(self.sequence_len, x.size(0), -1)
+
+forward = []
+backward = []
+
+# Last hidden state is passed through a linear layer
+out = self.linear(hs_lstm)
+For a better understanding, we are going to explain the assembly with some defined values, in such a way that we can understand how each tensor is passed from one layer to another. So say we have:
+
+so the x input tensor will have a shape:
+# torch.Size([batch_size, sequence_len])
+x : torch.Size([64, 100])
+then, in line 2 is passed the x tensor through the embedding layer, so the output would have a size:
+# torch.Size([batch_size, sequence_len, hidden_size])
+x_embedded : torch.Size([64, 100, 128])
+It is important to notice that in line 5 we are reshaping the x_embedded tensor. This is because we need to have the sequence length as the first dimension, essentially because in the Bi-LSTM we will iterate over each sequence, so the reshaped tensor will have a shape:
+# torch.Size([sequence_len, batch_size, hidden_size])
+x_embedded_reshaped : torch.Size([100, 64, 128])
+Right after, in lines 7 and 8 the forward and backward lists are defined. There we will store the hidden states of the Bi-LSTM.
+So it’s time to feed the Bi-LSTM. First, in line 12 we are iterating over forward LSTM, we are also saving the hidden states of each time step (hs_forward). In line 19 we are iterating over the backward LSTM, at the same time we are saving the hidden states of each time step (hs_backward). You can notice that the loop is done in the same sequence, the difference is that it’s read in reversed form. Each hidden state will have the following shape:
+# hs_forward : torch.Size([batch_size, hidden_size])
+hs_forward : torch.Size([64, 128])
+# hs_backward : torch.Size([batch_size, hidden_size])
+hs_backward: torch.Size([64, 128])
+Great, now let’s see how to feed the latest LSTM layer. For this, we make use of the forward and backward lists. In line 26 we are iterating through each hidden state corresponding to forward and backward which are concatenated in line 27. It is important to note that by concatenating both hidden states, the dimension of the tensor will increase 2X, that is, the tensor will have the following shape:
+# input_tesor : torch.Size([bathc_size, hidden_size * 2])
+input_tensor : torch.Size([64, 256])
+Finally, the LSTM will return a hidden state of size:
+# last_hidden_state: torch.Size([batch_size, num_classes])
+last_hidden_state: torch.Size([64, 27])
+At the very end, the last hidden state of the LSTM will be passed through a linear layer, as shown on line 31. So, the complete forward function is shown in the following code snippet:
+
+
+    Congratulations! Up to this point we already know how to assemble the neural networks using LSTMCell in PyTorch. Now it’s time to see how we do the training phase, so let’s move on to the next section.
+Training phase
+Great, we’ve come to training. To perform the training we need to initialize the model and the optimizer, later we need to iterate for each epoch and for each mini-batch, so let’s do it!
+
+
+      Once the model is trained, we will need to save the weights of the neural network to later use them to generate text. For this we have two options, the first is to define a fixed number of epochs and then save the weights, the second is to determine a stop function to obtain the best version of the model. In this particular case, we are going to opt for the first option. After training the model under a certain number of epochs, we save the weights as follows:
+      # Save weights
+torch.save(model.state_dict(), 'weights/textGenerator_model.pt')
+Perfect, up to this point we have already seen how to train the text generator and how to save the weights, now we are going to the top part of this blog, the text generation! So let’s go to the next section.
+Text generation
+Fantastic, we have reached the final part of the blog, the text generation. For this, we need to do two things: the first is to load the trained weights and the second is to take a random sample from the set of sequences as the pattern to start generating the next character. So let’s take a look at the following code snippet:
+we can generate the following:
+As we can see, the generated text may not make any sense, however there are some words and phrases that seem to form an idea, for example:
+we, band, pack, the, man, where, he, hang, out, be, thing, me, were
+Congratulations, we have reached the end of the blog!
+Conclusion
+Throughout this blog we have shown how to make an end-to-end model for text generation using PyTorch’s LSTMCell and implementing an architecture based on recurring neural networks LSTM and Bi-LSTM.
+It is important to comment that the suggested model for text generation can be improved in different ways. Some suggested ideas would be to increase the size of the text corpus to be trained, increase the number of epochs as well as the memory size for each LSTM. On the other hand, we could think of an interesting architecture based on Convolutional-LSTM (maybe a topic for another blog).
+Understanding LSTM Networks
+Posted on August 27, 2015
+
+
+Recurrent Neural Networks
+Humans don’t start their thinking from scratch every second. As you read this essay, you understand each word based on your understanding of previous words. You don’t throw everything away and start thinking from scratch again. Your thoughts have persistence.
+
+Traditional neural networks can’t do this, and it seems like a major shortcoming. For example, imagine you want to classify what kind of event is happening at every point in a movie. It’s unclear how a traditional neural network could use its reasoning about previous events in the film to inform later ones.
+
+Recurrent neural networks address this issue. They are networks with loops in them, allowing information to persist.
+
+
+Recurrent Neural Networks have loops.
+In the above diagram, a chunk of neural network, A, looks at some input xt and outputs a value ht. A loop allows information to be passed from one step of the network to the next.
+
+These loops make recurrent neural networks seem kind of mysterious. However, if you think a bit more, it turns out that they aren’t all that different than a normal neural network. A recurrent neural network can be thought of as multiple copies of the same network, each passing a message to a successor. Consider what happens if we unroll the loop:
+
+An unrolled recurrent neural network.
+An unrolled recurrent neural network.
+This chain-like nature reveals that recurrent neural networks are intimately related to sequences and lists. They’re the natural architecture of neural network to use for such data.
+
+And they certainly are used! In the last few years, there have been incredible success applying RNNs to a variety of problems: speech recognition, language modeling, translation, image captioning… The list goes on. I’ll leave discussion of the amazing feats one can achieve with RNNs to Andrej Karpathy’s excellent blog post, The Unreasonable Effectiveness of Recurrent Neural Networks. But they really are pretty amazing.
+
+Essential to these successes is the use of “LSTMs,” a very special kind of recurrent neural network which works, for many tasks, much much better than the standard version. Almost all exciting results based on recurrent neural networks are achieved with them. It’s these LSTMs that this essay will explore.
+
+The Problem of Long-Term Dependencies
+One of the appeals of RNNs is the idea that they might be able to connect previous information to the present task, such as using previous video frames might inform the understanding of the present frame. If RNNs could do this, they’d be extremely useful. But can they? It depends.
+
+Sometimes, we only need to look at recent information to perform the present task. For example, consider a language model trying to predict the next word based on the previous ones. If we are trying to predict the last word in “the clouds are in the sky,” we don’t need any further context – it’s pretty obvious the next word is going to be sky. In such cases, where the gap between the relevant information and the place that it’s needed is small, RNNs can learn to use the past information.
+
+
+But there are also cases where we need more context. Consider trying to predict the last word in the text “I grew up in France… I speak fluent French.” Recent information suggests that the next word is probably the name of a language, but if we want to narrow down which language, we need the context of France, from further back. It’s entirely possible for the gap between the relevant information and the point where it is needed to become very large.
+
+Unfortunately, as that gap grows, RNNs become unable to learn to connect the information.
+
+Neural networks struggle with long term dependencies.
+In theory, RNNs are absolutely capable of handling such “long-term dependencies.” A human could carefully pick parameters for them to solve toy problems of this form. Sadly, in practice, RNNs don’t seem to be able to learn them. The problem was explored in depth by Hochreiter (1991) [German] and Bengio, et al. (1994), who found some pretty fundamental reasons why it might be difficult.
+
+Thankfully, LSTMs don’t have this problem!
+
+LSTM Networks
+Long Short Term Memory networks – usually just called “LSTMs” – are a special kind of RNN, capable of learning long-term dependencies. They were introduced by Hochreiter & Schmidhuber (1997), and were refined and popularized by many people in following work.1 They work tremendously well on a large variety of problems, and are now widely used.
+
+LSTMs are explicitly designed to avoid the long-term dependency problem. Remembering information for long periods of time is practically their default behavior, not something they struggle to learn!
+
+All recurrent neural networks have the form of a chain of repeating modules of neural network. In standard RNNs, this repeating module will have a very simple structure, such as a single tanh layer.
+
+
+The repeating module in a standard RNN contains a single layer.
+LSTMs also have this chain like structure, but the repeating module has a different structure. Instead of having a single neural network layer, there are four, interacting in a very special way.
+
+A LSTM neural network.
+The repeating module in an LSTM contains four interacting layers.
+Don’t worry about the details of what’s going on. We’ll walk through the LSTM diagram step by step later. For now, let’s just try to get comfortable with the notation we’ll be using.
+
+
+In the above diagram, each line carries an entire vector, from the output of one node to the inputs of others. The pink circles represent pointwise operations, like vector addition, while the yellow boxes are learned neural network layers. Lines merging denote concatenation, while a line forking denote its content being copied and the copies going to different locations.
+The Core Idea Behind LSTMs
+The key to LSTMs is the cell state, the horizontal line running through the top of the diagram.
+
+The cell state is kind of like a conveyor belt. It runs straight down the entire chain, with only some minor linear interactions. It’s very easy for information to just flow along it unchanged.
+
+
+The LSTM does have the ability to remove or add information to the cell state, carefully regulated by structures called gates.
+
+Gates are a way to optionally let information through. They are composed out of a sigmoid neural net layer and a pointwise multiplication operation.
+
+
+The sigmoid layer outputs numbers between zero and one, describing how much of each component should be let through. A value of zero means “let nothing through,” while a value of one means “let everything through!”
+
+An LSTM has three of these gates, to protect and control the cell state.
+
+Step-by-Step LSTM Walk Through
+The first step in our LSTM is to decide what information we’re going to throw away from the cell state. This decision is made by a sigmoid layer called the “forget gate layer.” It looks at ht−1 and xt, and outputs a number between 0 and 1 for each number in the cell state Ct−1. A 1 represents “completely keep this” while a 0 represents “completely get rid of this.”
+
+Let’s go back to our example of a language model trying to predict the next word based on all the previous ones. In such a problem, the cell state might include the gender of the present subject, so that the correct pronouns can be used. When we see a new subject, we want to forget the gender of the old subject.
+
+
+The next step is to decide what new information we’re going to store in the cell state. This has two parts. First, a sigmoid layer called the “input gate layer” decides which values we’ll update. Next, a tanh layer creates a vector of new candidate values, C̃ t, that could be added to the state. In the next step, we’ll combine these two to create an update to the state.
+
+In the example of our language model, we’d want to add the gender of the new subject to the cell state, to replace the old one we’re forgetting.
+
+
+It’s now time to update the old cell state, Ct−1, into the new cell state Ct. The previous steps already decided what to do, we just need to actually do it.
+
+We multiply the old state by ft, forgetting the things we decided to forget earlier. Then we add it∗C̃ t. This is the new candidate values, scaled by how much we decided to update each state value.
+
+In the case of the language model, this is where we’d actually drop the information about the old subject’s gender and add the new information, as we decided in the previous steps.
+
+
+Finally, we need to decide what we’re going to output. This output will be based on our cell state, but will be a filtered version. First, we run a sigmoid layer which decides what parts of the cell state we’re going to output. Then, we put the cell state through tanh (to push the values to be between −1 and 1) and multiply it by the output of the sigmoid gate, so that we only output the parts we decided to.
+
+For the language model example, since it just saw a subject, it might want to output information relevant to a verb, in case that’s what is coming next. For example, it might output whether the subject is singular or plural, so that we know what form a verb should be conjugated into if that’s what follows next.
+
+
+Variants on Long Short Term Memory
+What I’ve described so far is a pretty normal LSTM. But not all LSTMs are the same as the above. In fact, it seems like almost every paper involving LSTMs uses a slightly different version. The differences are minor, but it’s worth mentioning some of them.
+
+One popular LSTM variant, introduced by Gers & Schmidhuber (2000), is adding “peephole connections.” This means that we let the gate layers look at the cell state.
+
+
+The above diagram adds peepholes to all the gates, but many papers will give some peepholes and not others.
+
+Another variation is to use coupled forget and input gates. Instead of separately deciding what to forget and what we should add new information to, we make those decisions together. We only forget when we’re going to input something in its place. We only input new values to the state when we forget something older.
+
+
+A slightly more dramatic variation on the LSTM is the Gated Recurrent Unit, or GRU, introduced by Cho, et al. (2014). It combines the forget and input gates into a single “update gate.” It also merges the cell state and hidden state, and makes some other changes. The resulting model is simpler than standard LSTM models, and has been growing increasingly popular.
+
+A gated recurrent unit neural network.
+These are only a few of the most notable LSTM variants. There are lots of others, like Depth Gated RNNs by Yao, et al. (2015). There’s also some completely different approach to tackling long-term dependencies, like Clockwork RNNs by Koutnik, et al. (2014).
+
+Which of these variants is best? Do the differences matter? Greff, et al. (2015) do a nice comparison of popular variants, finding that they’re all about the same. Jozefowicz, et al. (2015) tested more than ten thousand RNN architectures, finding some that worked better than LSTMs on certain tasks.
+
+Conclusion
+Earlier, I mentioned the remarkable results people are achieving with RNNs. Essentially all of these are achieved using LSTMs. They really work a lot better for most tasks!
+
+Written down as a set of equations, LSTMs look pretty intimidating. Hopefully, walking through them step by step in this essay has made them a bit more approachable.
+
+LSTMs were a big step in what we can accomplish with RNNs. It’s natural to wonder: is there another big step? A common opinion among researchers is: “Yes! There is a next step and it’s attention!” The idea is to let every step of an RNN pick information to look at from some larger collection of information. For example, if you are using an RNN to create a caption describing an image, it might pick a part of the image to look at for every word it outputs. In fact, Xu, et al. (2015) do exactly this – it might be a fun starting point if you want to explore attention! There’s been a number of really exciting results using attention, and it seems like a lot more are around the corner…
+
+Attention isn’t the only exciting thread in RNN research. For example, Grid LSTMs by Kalchbrenner, et al. (2015) seem extremely promising. Work using RNNs in generative models – such as Gregor, et al. (2015), Chung, et al. (2015), or Bayer & Osendorfer (2015) – also seems very interesting. The last few years have been an exciting time for recurrent neural networks, and the coming ones promise to only be more so!
+
+Acknowledgments
+I’m grateful to a number of people for helping me better understand LSTMs, commenting on the visualizations, and providing feedback on this post.
+
+I’m very grateful to my colleagues at Google for their helpful feedback, especially Oriol Vinyals, Greg Corrado, Jon Shlens, Luke Vilnis, and Ilya Sutskever. I’m also thankful to many other friends and colleagues for taking the time to help me, including Dario Amodei, and Jacob Steinhardt. I’m especially thankful to Kyunghyun Cho for extremely thoughtful correspondence about my diagrams.
+
+Before this post, I practiced explaining LSTMs during two seminar series I taught on neural networks. Thanks to everyone who participated in those for their patience with me, and for their feedback.
+
+In addition to the original authors, a lot of people contributed to the modern LSTM. A non-comprehensive list is: Felix Gers, Fred Cummins, Santiago Fernandez, Justin Bayer, Daan Wierstra, Julian Togelius, Faustino Gomez, Matteo Gagliolo, and Alex Graves.↩
+
+Long Short-Term Memory: From Zero to Hero with PyTorch
+Long Short-Term Memory (LSTM) Networks have been widely used to solve various sequential tasks. Let's find out how these networks work and how we can implement them.
+
+Gabriel Loye
+Gabriel Loye
+Jun 15, 2019 • 21 min read
+
+Just like us, Recurrent Neural Networks (RNNs) can be very forgetful. This struggle with short-term memory causes RNNs to lose their effectiveness in most tasks. However, do not fret, Long Short-Term Memory networks (LSTMs) have great memories and can remember information which the vanilla RNN is unable to!
+
+LSTMs are a particular variant of RNNs, therefore having a grasp of the concepts surrounding RNNs will significantly aid your understanding of LSTMs in this article. I covered the mechanism of RNNs in my previous article here.
+
+Ready to build, train, and deploy AI?
+Get started with FloydHub's collaborative AI platform for free
+Try FloydHub for free
+A quick recap on RNNs
+RNNs process inputs in a sequential manner, where the context from the previous input is considered when computing the output of the current step. This allows the neural network to carry information over different time steps rather than keeping all the inputs independent of each other.
+
+
+Process Flow of RNNs
+However, a significant shortcoming that plagues the typical RNN is the problem of vanishing/exploding gradients. This problem arises when back-propagating through the RNN during training, especially for networks with deeper layers. The gradients have to go through continuous matrix multiplications during the back-propagation process due to the chain rule, causing the gradient to either shrink exponentially (vanish) or blow up exponentially (explode). Having a gradient that is too small prevents the weights from updating and learning, whereas extremely large gradients cause the model to be unstable.
+
+Due to these issues, RNNs are unable to work with longer sequences and hold on to long-term dependencies, making them suffer from “short-term memory”.
+
+What are LSTMs
+While LSTMs are a kind of RNN and function similarly to traditional RNNs, its Gating mechanism is what sets it apart. This feature addresses the “short-term memory” problem of RNNs.
+
+
+Vanilla RNN vs LSTM
+As we can see from the image, the difference lies mainly in the LSTM’s ability to preserve long-term memory. This is especially important in the majority of Natural Language Processing (NLP) or time-series and sequential tasks. For example, let’s say we have a network generating text based on some input given to us. At the start of the text, it is mentioned that the author has a “dog named Cliff”. After a few other sentences where there is no mention of a pet or dog, the author brings up his pet again, and the model has to generate the next word to "However, Cliff, my pet ____". As the word pet appeared right before the blank, a RNN can deduce that the next word will likely be an animal that can be kept as a pet.
+
+
+RNNs are unable to remember information from much earlier
+However, due to the short-term memory, the typical RNN will only be able to use the contextual information from the text that appeared in the last few sentences - which is not useful at all. The RNN has no clue as to what animal the pet might be as the relevant information from the start of the text has already been lost.
+
+On the other hand, the LSTM can retain the earlier information that the author has a pet dog, and this will aid the model in choosing "the dog" when it comes to generating the text at that point due to the contextual information from a much earlier time step.
+
+
+LSTMs can hold onto features for a long-term
+Inner workings of the LSTM
+The secret sauce to the LSTM lies in its gating mechanism within each LSTM cell. In the normal RNN cell, the input at a time-step and the hidden state from the previous time step is passed through a tanh activation function to obtain a new hidden state and output.
+
+
+Inner workings of an RNN cell
+LSTMs, on the other hand, have a slightly more complex structure. At each time step, the LSTM cell takes in 3 different pieces of information -- the current input data, the short-term memory from the previous cell (similar to hidden states in RNNs) and lastly the long-term memory.
+The short-term memory is commonly referred to as the hidden state, and the long-term memory is usually known as the cell state.
+
+The cell then uses gates to regulate the information to be kept or discarded at each time step before passing on the long-term and short-term information to the next cell.
+These gates can be seen as water filters. Ideally, the role of these gates is supposed to selectively remove any irrelevant information, similar to how water filters prevent impurities from passing through. At the same time, only water and beneficial nutrients can pass through these filters, just like how the gates only hold on to the useful information. Of course, these gates need to be trained to accurately filter what is useful and what is not.
+
+
+LSTM Gates can be seen as filters
+These gates are called the Input Gate, the Forget Gate, and the Output Gate. There are many variants to the names of these gates; nevertheless, the calculations and workings of these gates are mostly the same.
+
+
+Inner Workings of the LSTM cell
+Let’s go through the mechanisms of these gates one-by-one.
+
+Input Gate
+The input gate decides what new information will be stored in the long-term memory. It only works with the information from the current input and the short-term memory from the previous time step. Therefore, it has to filter out the information from these variables that are not useful.
+
+
+Input Gate computations
+Mathematically, this is achieved using 2 layers. The first layer can be seen as the filter which selects what information can pass through it and what information to be discarded. To create this layer, we pass the short-term memory and current input into a sigmoid function. The sigmoid function will transform the values to be between 0 and 1, with 0 indicating that part of the information is unimportant, whereas 1 indicates that the information will be used. This helps to decide the values to be kept and used, and also the values to be discarded. As the layer is being trained through back-propagation, the weights in the sigmoid function will be updated such that it learns to only let the useful pass through while discarding the less critical features.
+
+
+The second layer takes the short term memory and current input as well and passes it through an activation function, usually the $$tanh$$ function, to regulate the network.
+
+
+The outputs from these 2 layers are then multiplied, and the final outcome represents the information to be kept in the long-term memory and used as the output.
+
+
+Forget Gate
+The forget gate decides which information from the long-term memory should be kept or discarded. This is done by multiplying the incoming long-term memory by a forget vector generated by the current input and incoming short-term memory.
+
+
+Forget Gate Flow
+Just like the first layer in the Input gate, the forget vector is also a selective filter layer. To obtain the forget vector, the short-term memory, and current input is passed through a sigmoid function, similar to the first layer in the Input Gate above, but with different weights. The vector will be made up of 0s and 1s and will be multiplied with the long-term memory to choose which parts of the long-term memory to retain.
+
+
+)
+The outputs from the Input gate and the Forget gate will undergo a pointwise addition to give a new version of the long-term memory, which will be passed on to the next cell. This new long-term memory will also be used in the final gate, the Output gate.
+
+Output Gate
+The output gate will take the current input, the previous short-term memory, and the newly computed long-term memory to produce the new short-term memory/hidden state which will be passed on to the cell in the next time step. The output of the current time step can also be drawn from this hidden state.
+
+
+Output Gate computations
+First, the previous short-term memory and current input will be passed into a sigmoid function (Yes, this is the 3rd time we’re doing this) with different weights yet again to create the third and final filter. Then, we put the new long-term memory through an activation $$tanh$$ function. The output from these 2 processes will be multiplied to produce the new short-term memory.
+
+The short-term and long-term memory produced by these gates will then be carried over to the next cell for the process to be repeated. The output of each time step can be obtained from the short-term memory, also known as the hidden state.
+
+That's all there is to the mechanisms of the typical LSTM structure. Not all that tough, eh?
+
+Code Implementation
+With the necessary theoretical understanding of LSTMs, let's start implementing it in code. We'll be using the PyTorch library today.
+
+Before we jump into a project with a full dataset, let's just take a look at how the PyTorch LSTM layer really works in practice by visualizing the outputs. We don't need to instantiate a model to see how the layer works. You can run this on FloydHub with the button below under LSTM_starter.ipynb. (You don’t need to run on a GPU for this portion)
+
+Run on FloydHub
+
+import torch
+import torch.nn as nn
+Just like the other kinds of layers, we can instantiate an LSTM layer and provide it with the necessary arguments. The full documentation of the accepted arguments can be found here. In this example, we will only be defining the input dimension, hidden dimension, and the number of layers.
+
+Input dimension - represents the size of the input at each time step, e.g. input of dimension 5 will look like this [1, 3, 8, 2, 3]
+Hidden dimension - represents the size of the hidden state and cell state at each time step, e.g. the hidden state and cell state will both have the shape of [3, 5, 4] if the hidden dimension is 3
+Number of layers - the number of LSTM layers stacked on top of each other
+input_dim = 5
+hidden_dim = 10
+n_layers = 1
+
+lstm_layer = nn.LSTM(input_dim, hidden_dim, n_layers, batch_first=True)
+Let's create some dummy data to see how the layer takes in the input. As our input dimension is 5, we have to create a tensor of the shape (1, 1, 5) which represents (batch size, sequence length, input dimension).
+
+
+Additionally, we'll have to initialize a hidden state and cell state for the LSTM as this is the first cell. The hidden state and cell state is stored in a tuple with the format (hidden_state, cell_state).
+
+batch_size = 1
+seq_len = 1
+
+inp = torch.randn(batch_size, seq_len, input_dim)
+hidden_state = torch.randn(n_layers, batch_size, hidden_dim)
+cell_state = torch.randn(n_layers, batch_size, hidden_dim)
+hidden = (hidden_state, cell_state)
+[Out]:
+Input shape: (1, 1, 5)
+Hidden shape: ((1, 1, 10), (1, 1, 10))
+Next, we’ll feed the input and hidden states and see what we’ll get back from it.
+
+out, hidden = lstm_layer(inp, hidden)
+print("Output shape: ", out.shape)
+print("Hidden: ", hidden)
+[Out]: Output shape: torch.size([1, 1, 10])
+	 Hidden: (tensor([[[ 0.1749,  0.0099, -0.3004,  0.2846, -0.2262, -0.5257,  0.2925, -0.1894,  0.1166, -0.1197]]], grad_fn=<StackBackward>), tensor([[[ 0.4167,  0.0385, -0.4982,  0.6955, -0.9213, -1.0072,  0.4426,
+          -0.3691,  0.2020, -0.2242]]], grad_fn=<StackBackward>))
+In the process above, we saw how the LSTM cell will process the input and hidden states at each time step. However in most cases, we'll be processing the input data in large sequences. The LSTM can also take in sequences of variable length and produce an output at each time step. Let's try changing the sequence length this time.
+
+seq_len = 3
+inp = torch.randn(batch_size, seq_len, input_dim)
+out, hidden = lstm_layer(inp, hidden)
+print(out.shape)
+[Out]: torch.Size([1, 3, 10])
+This time, the output's 2nd dimension is 3, indicating that there were 3 outputs given by the LSTM. This corresponds to the length of our input sequence. For the use cases where we'll need an output at every time step (many-to-many), such as Text Generation, the output of each time step can be extracted directly from the 2nd dimension and fed into a fully connected layer. For text classification tasks (many-to-one), such as Sentiment Analysis, the last output can be taken to be fed into a classifier.
+
+
+LSTMs can solve various tasks based on how the output is extracted
+# Obtaining the last output
+out = out.squeeze()[-1, :]
+print(out.shape)
+[Out]: torch.Size([10])
+Project: Sentiment Analysis on Amazon Reviews
+For this project, we’ll be using the Amazon customer reviews dataset which can be found on Kaggle. The dataset contains a total of 4 million reviews with each review labeled to be of either positive or negative sentiment. You can run the code implementation in this article on FloydHub using their GPUs on the cloud by clicking the following link and using the main.ipynb notebook.
+
+This will speed up the training process significantly. Alternatively, the link to the GitHub repository can be found here.
+
+Run on FloydHub
+
+Our goal at the time of this implementation will be to create an LSTM model that can accurately classify and distinguish the sentiment of a review. To do so, we’ll have to start with some data-preprocessing, defining and training the model, followed by assessing the model.
+
+The process flow of our implementation looks like this.
+
+
+We will go in detail for each of these steps
+We will only be using 1 million reviews in this implementation to speed things up, however, feel free to run it yourself with the entire dataset if you have the time and computing capacity.
+
+For our data pre-processing steps, we'll be using regex, Numpy and the NLTK (Natural Language Toolkit) library for some simple NLP helper functions. As the data is compressed in the bz2 format, we'll use the Python bz2 module to read the data.
+
+import bz2
+from collections import Counter
+import re
+import nltk
+import numpy as np
+nltk.download('punkt')
+
+train_file = bz2.BZ2File('../input/amazon_reviews/train.ft.txt.bz2')
+test_file = bz2.BZ2File('../input/amazon_reviews/test.ft.txt.bz2')
+
+train_file = train_file.readlines()
+test_file = test_file.readlines()
+Number of training reviews: 3600000
+Number of test reviews: 400000
+
+This dataset contains a total of 4 million reviews - 3.6 million training and 0.4 million for testing. We will be using only 800k for training and 200k for testing here -- this is still a large amount of data.
+
+num_train = 800000  # We're training on the first 800,000 reviews in the dataset
+num_test = 200000  # Using 200,000 reviews from test set
+
+train_file = [x.decode('utf-8') for x in train_file[:num_train]]
+test_file = [x.decode('utf-8') for x in test_file[:num_test]]
+The format of the sentences are as such:
+__label__2 Stunning even for the non-gamer: This soundtrack was beautiful! It paints the scenery in your mind so well I would recommend it even to people who hate vid. game music! I have played the game Chrono Cross but out of all of the games I have ever played it has the best music! It backs away from crude keyboarding and takes a fresher step with great guitars and soulful orchestras. It would impress anyone who cares to listen! ^_^
+
+We'll have to extract out the labels from the sentences. The data is the format __label__1/2 <sentence>, therefore we can easily split it accordingly. Positive sentiment labels are stored as 1 and negative are stored as 0.
+
+We will also change all URLs to a standard <url\> as the exact URL is irrelevant to the sentiment in most cases.
+
+Tokenization is the task of splitting a sentence into individual tokens, which can be words or punctuation, etc.
+
+There are many NLP libraries that can do this, such as spaCy or Scikit-learn, but we will be using NLTK here as it has one of the faster tokenizers.
+The words will then be stored in a dictionary mapping the word to its number of appearances. These words will become our vocabulary.
+
+words = Counter()  # Dictionary that will map a word to the number of times it appeared in all the training sentences
+for i, sentence in enumerate(train_sentences):
+    # The sentences will be stored as a list of words/tokens
+    train_sentences[i] = []
+    for word in nltk.word_tokenize(sentence):  # Tokenizing the words
+        words.update([word.lower()])  # Converting all the words to lowercase
+        train_sentences[i].append(word)
+    if i%20000 == 0:
+        print(str((i*100)/num_train) + "% done")
+print("100% done")
+To remove typos and words that likely don't exist, we'll remove all words from the vocab that only appear once throughout.
+To account for unknown words and padding, we'll have to add them to our vocabulary as well. Each word in the vocabulary will then be assigned an integer index and after that mapped to this integer.
+# Removing the words that only appear once
+words = {k:v for k,v in words.items() if v>1}
+# Sorting the words according to the number of appearances, with the most common word being first
+words = sorted(words, key=words.get, reverse=True)
+# Adding padding and unknown to our vocabulary so that they will be assigned an index
+words = ['_PAD','_UNK'] + words
+# Dictionaries to store the word to index mappings and vice versa
+word2idx = {o:i for i,o in enumerate(words)}
+idx2word = {i:o for i,o in enumerate(words)}
+With the mappings, we'll convert the words in the sentences to their corresponding indexes.
+
+for i, sentence in enumerate(train_sentences):
+    # Looking up the mapping dictionary and assigning the index to the respective words
+    train_sentences[i] = [word2idx[word] if word in word2idx else 0 for word in sentence]
+
+for i, sentence in enumerate(test_sentences):
+    # For test sentences, we have to tokenize the sentences as well
+    test_sentences[i] = [word2idx[word.lower()] if word.lower() in word2idx else 0 for word in nltk.word_tokenize(sentence)]
+In the last pre-processing step, we'll be padding the sentences with 0s and shortening the lengthy sentences so that the data can be trained in batches to speed things up.
+
+# Defining a function that either shortens sentences or pads sentences with 0 to a fixed length
+def pad_input(sentences, seq_len):
+    features = np.zeros((len(sentences), seq_len),dtype=int)
+    for ii, review in enumerate(sentences):
+        if len(review) != 0:
+            features[ii, -len(review):] = np.array(review)[:seq_len]
+    return features
+
+seq_len = 200  # The length that the sentences will be padded/shortened to
+
+train_sentences = pad_input(train_sentences, seq_len)
+test_sentences = pad_input(test_sentences, seq_len)
+
+# Converting our labels into numpy arrays
+train_labels = np.array(train_labels)
+test_labels = np.array(test_labels)
+A padded sentence will look something like this, where 0 represents the padding:
+
+Our dataset is already split into training and testing data. However, we still need a set of data for validation during training. Therefore, we will split our test data by half into a validation set and a testing set. A detailed explanation of dataset splits can be found here.
+
+split_frac = 0.5 # 50% validation, 50% test
+split_id = int(split_frac * len(test_sentences))
+val_sentences, test_sentences = test_sentences[:split_id], test_sentences[split_id:]
+val_labels, test_labels = test_labels[:split_id], test_labels[split_id:]
+Next, this is the point where we’ll start working with the PyTorch library. We’ll first define the datasets from the sentences and labels, followed by loading them into a data loader. We set the batch size to 256. This can be tweaked according to your needs.
+We can also check if we have any GPUs to speed up our training time by many folds. If you’re using FloydHub with GPU to run this code, the training time will be significantly reduced.
+
+# torch.cuda.is_available() checks and returns a Boolean True if a GPU is available, else it'll return False
+is_cuda = torch.cuda.is_available()
+
+# If we have a GPU available, we'll set our device to GPU. We'll use this device variable later in our code.
+if is_cuda:
+    device = torch.device("cuda")
+else:
+    device = torch.device("cpu")
+At this point, we will be defining the architecture of the model. At this stage, we can create Neural Networks that have deep layers or a large number of LSTM layers stacked on top of each other. However, a simple model such as the one below with just an LSTM and a fully connected layer works quite well and requires much less training time. We will be training our own word embeddings in the first layer before the sentences are fed into the LSTM layer.
+
+
+This is how our model will look like
+The final layer is a fully connected layer with a sigmoid function to classify whether the review is of positive/negative sentiment.
+
+
+Take note that we can actually load pre-trained word embeddings such as GloVe or fastText which can increase the model’s accuracy and decrease training time.
+
+With this, we can instantiate our model after defining the arguments. The output dimension will only be 1 as it only needs to output 1 or 0. The learning rate, loss function and optimizer are defined as well.
+
+After we’re done training, it's time to test our model on a dataset it has never seen before - our test dataset. We'll first load the model weights from the point where the validation loss is the lowest.
+
+We can calculate the accuracy of the model to see how accurate our model’s predictions are.
+
+We managed to achieve an accuracy of 93.8% with this simple LSTM model! This shows the effectiveness of LSTM in handling such sequential tasks.
+
+This result was achieved with just a few simple layers and without any hyperparameter tuning. There are so many other improvements that can be made to increase the model’s effectiveness, and you are free to attempt to beat this accuracy by implementing these improvements!
+
+Some improvement suggestions are as follow:
+
+Running a hyperparameter search to optimize your configurations. A guide to the techniques can be found here
+Increasing the model complexity
+E.g. Adding more layers/ using bidirectional LSTMsUsing pre-trained word embeddings such as GloVe embeddings
+Beyond LSTMs
+For many years, LSTMs has been state-of-the-art when it comes to NLP tasks. However, recent advancements in Attention-based models and Transformers have produced even better results. With the release of pre-trained transformer models such as Google’s BERT and OpenAI’s GPT, the use of LSTM has been declining. Nevertheless, understanding the concepts behind RNNs and LSTMs is definitely still useful, and who knows, maybe one day the LSTM will make its comeback?
+
+Moving Forward
+This comes to the end of this article regarding LSTMs. In this article, we covered the gating mechanisms of the LSTM and how it can retain long-term dependencies. We also did an implementation of the LSTM model on the Amazon Reviews dataset for Sentiment Analysis.
+
+If you are interested in understanding more advanced NLP techniques, you can refer to the following articles article on How to code The Transformer or How to Build OpenAI’s GPT-2. Alternatively, this article also proves a broad view of the current state of NLP developments are what you can look forward to in terms of emerging technologies.
+
+Happy learning!
+
+Special thanks to Alessio for his valuable feedback and advice through this article and the rest of the FloydHub team for providing this amazing platform and allowing me to give back to the deep learning community. Stay awesome!
+
+FloydHub Call for AI writers
+Want to write amazing articles like Gabriel and play your role in the long road to Artificial General Intelligence? We are looking for passionate writers, to build the world's best blog for practical applications of groundbreaking A.I. techniques. FloydHub has a large reach within the AI community and with your help, we can inspire the next wave of AI. Apply now and join the crew!
+
+About Gabriel Loye
+
+Gabriel is an Artificial Intelligence enthusiast and web developer. He’s currently exploring various fields of deep learning, from Natural Language Processing to Computer Vision. He is always open to learning new things and implementing or researching on novel ideas and technologies. He will be starting his undergraduate studies in Business Analytics at NUS School of Computing. He is currently an intern at a FinTech start-up, PinAlpha. Gabriel is also a FloydHub AI Writer. You can connect with Gabriel on LinkedIn and GitHub.
+
+The Unreasonable Effectiveness of Recurrent Neural Networks
+May 21, 2015
+
+There’s something magical about Recurrent Neural Networks (RNNs). I still remember when I trained my first recurrent network for Image Captioning. Within a few dozen minutes of training my first baby model (with rather arbitrarily-chosen hyperparameters) started to generate very nice looking descriptions of images that were on the edge of making sense. Sometimes the ratio of how simple your model is to the quality of the results you get out of it blows past your expectations, and this was one of those times. What made this result so shocking at the time was that the common wisdom was that RNNs were supposed to be difficult to train (with more experience I’ve in fact reached the opposite conclusion). Fast forward about a year: I’m training RNNs all the time and I’ve witnessed their power and robustness many times, and yet their magical outputs still find ways of amusing me. This post is about sharing some of that magic with you.
+
+We’ll train RNNs to generate text character by character and ponder the question “how is that even possible?”
+
+By the way, together with this post I am also releasing code on Github that allows you to train character-level language models based on multi-layer LSTMs. You give it a large chunk of text and it will learn to generate text like it one character at a time. You can also use it to reproduce my experiments below. But we’re getting ahead of ourselves; What are RNNs anyway?
+
+Recurrent Neural Networks
+Sequences. Depending on your background you might be wondering: What makes Recurrent Networks so special? A glaring limitation of Vanilla Neural Networks (and also Convolutional Networks) is that their API is too constrained: they accept a fixed-sized vector as input (e.g. an image) and produce a fixed-sized vector as output (e.g. probabilities of different classes). Not only that: These models perform this mapping using a fixed amount of computational steps (e.g. the number of layers in the model). The core reason that recurrent nets are more exciting is that they allow us to operate over sequences of vectors: Sequences in the input, the output, or in the most general case both. A few examples may make this more concrete:
+
+
+Each rectangle is a vector and arrows represent functions (e.g. matrix multiply). Input vectors are in red, output vectors are in blue and green vectors hold the RNN's state (more on this soon). From left to right: (1) Vanilla mode of processing without RNN, from fixed-sized input to fixed-sized output (e.g. image classification). (2) Sequence output (e.g. image captioning takes an image and outputs a sentence of words). (3) Sequence input (e.g. sentiment analysis where a given sentence is classified as expressing positive or negative sentiment). (4) Sequence input and sequence output (e.g. Machine Translation: an RNN reads a sentence in English and then outputs a sentence in French). (5) Synced sequence input and output (e.g. video classification where we wish to label each frame of the video). Notice that in every case are no pre-specified constraints on the lengths sequences because the recurrent transformation (green) is fixed and can be applied as many times as we like.
+As you might expect, the sequence regime of operation is much more powerful compared to fixed networks that are doomed from the get-go by a fixed number of computational steps, and hence also much more appealing for those of us who aspire to build more intelligent systems. Moreover, as we’ll see in a bit, RNNs combine the input vector with their state vector with a fixed (but learned) function to produce a new state vector. This can in programming terms be interpreted as running a fixed program with certain inputs and some internal variables. Viewed this way, RNNs essentially describe programs. In fact, it is known that RNNs are Turing-Complete in the sense that they can to simulate arbitrary programs (with proper weights). But similar to universal approximation theorems for neural nets you shouldn’t read too much into this. In fact, forget I said anything.
+
+If training vanilla neural nets is optimization over functions, training recurrent nets is optimization over programs.
+
+Sequential processing in absence of sequences. You might be thinking that having sequences as inputs or outputs could be relatively rare, but an important point to realize is that even if your inputs/outputs are fixed vectors, it is still possible to use this powerful formalism to process them in a sequential manner. For instance, the figure below shows results from two very nice papers from DeepMind. On the left, an algorithm learns a recurrent network policy that steers its attention around an image; In particular, it learns to read out house numbers from left to right (Ba et al.). On the right, a recurrent network generates images of digits by learning to sequentially add color to a canvas (Gregor et al.):
+
+ 
+Left: RNN learns to read house numbers. Right: RNN learns to paint house numbers.
+The takeaway is that even if your data is not in form of sequences, you can still formulate and train powerful models that learn to process it sequentially. You’re learning stateful programs that process your fixed-sized data.
+
+RNN computation. So how do these things work? At the core, RNNs have a deceptively simple API: They accept an input vector x and give you an output vector y. However, crucially this output vector’s contents are influenced not only by the input you just fed in, but also on the entire history of inputs you’ve fed in in the past. Written as a class, the RNN’s API consists of a single step function:
+
+rnn = RNN()
+y = rnn.step(x) # x is an input vector, y is the RNN's output vector
+The RNN class has some internal state that it gets to update every time step is called. In the simplest case this state consists of a single hidden vector h. Here is an implementation of the step function in a Vanilla RNN:
+
+class RNN:
+  # ...
+  def step(self, x):
+    # update the hidden state
+    self.h = np.tanh(np.dot(self.W_hh, self.h) + np.dot(self.W_xh, x))
+    # compute the output vector
+    y = np.dot(self.W_hy, self.h)
+    return y
+The above specifies the forward pass of a vanilla RNN. This RNN’s parameters are the three matrices W_hh, W_xh, W_hy. The hidden state self.h is initialized with the zero vector. The np.tanh function implements a non-linearity that squashes the activations to the range [-1, 1]. Notice briefly how this works: There are two terms inside of the tanh: one is based on the previous hidden state and one is based on the current input. In numpy np.dot is matrix multiplication. The two intermediates interact with addition, and then get squashed by the tanh into the new state vector. If you’re more comfortable with math notation, we can also write the hidden state update as ht=tanh(Whhht−1+Wxhxt), where tanh is applied elementwise.
+
+We initialize the matrices of the RNN with random numbers and the bulk of work during training goes into finding the matrices that give rise to desirable behavior, as measured with some loss function that expresses your preference to what kinds of outputs y you’d like to see in response to your input sequences x.
+
+Going deep. RNNs are neural networks and everything works monotonically better (if done right) if you put on your deep learning hat and start stacking models up like pancakes. For instance, we can form a 2-layer recurrent network as follows:
+
+y1 = rnn1.step(x)
+y = rnn2.step(y1)
+In other words we have two separate RNNs: One RNN is receiving the input vectors and the second RNN is receiving the output of the first RNN as its input. Except neither of these RNNs know or care - it’s all just vectors coming in and going out, and some gradients flowing through each module during backpropagation.
+
+Getting fancy. I’d like to briefly mention that in practice most of us use a slightly different formulation than what I presented above called a Long Short-Term Memory (LSTM) network. The LSTM is a particular type of recurrent network that works slightly better in practice, owing to its more powerful update equation and some appealing backpropagation dynamics. I won’t go into details, but everything I’ve said about RNNs stays exactly the same, except the mathematical form for computing the update (the line self.h = ... ) gets a little more complicated. From here on I will use the terms “RNN/LSTM” interchangeably but all experiments in this post use an LSTM.
+
+Character-Level Language Models
+Okay, so we have an idea about what RNNs are, why they are super exciting, and how they work. We’ll now ground this in a fun application: We’ll train RNN character-level language models. That is, we’ll give the RNN a huge chunk of text and ask it to model the probability distribution of the next character in the sequence given a sequence of previous characters. This will then allow us to generate new text one character at a time.
+
+As a working example, suppose we only had a vocabulary of four possible letters “helo”, and wanted to train an RNN on the training sequence “hello”. This training sequence is in fact a source of 4 separate training examples: 1. The probability of “e” should be likely given the context of “h”, 2. “l” should be likely in the context of “he”, 3. “l” should also be likely given the context of “hel”, and finally 4. “o” should be likely given the context of “hell”.
+
+Concretely, we will encode each character into a vector using 1-of-k encoding (i.e. all zero except for a single one at the index of the character in the vocabulary), and feed them into the RNN one at a time with the step function. We will then observe a sequence of 4-dimensional output vectors (one dimension per character), which we interpret as the confidence the RNN currently assigns to each character coming next in the sequence. Here’s a diagram:
+
+
+An example RNN with 4-dimensional input and output layers, and a hidden layer of 3 units (neurons). This diagram shows the activations in the forward pass when the RNN is fed the characters "hell" as input. The output layer contains confidences the RNN assigns for the next character (vocabulary is "h,e,l,o"); We want the green numbers to be high and red numbers to be low.
+For example, we see that in the first time step when the RNN saw the character “h” it assigned confidence of 1.0 to the next letter being “h”, 2.2 to letter “e”, -3.0 to “l”, and 4.1 to “o”. Since in our training data (the string “hello”) the next correct character is “e”, we would like to increase its confidence (green) and decrease the confidence of all other letters (red). Similarly, we have a desired target character at every one of the 4 time steps that we’d like the network to assign a greater confidence to. Since the RNN consists entirely of differentiable operations we can run the backpropagation algorithm (this is just a recursive application of the chain rule from calculus) to figure out in what direction we should adjust every one of its weights to increase the scores of the correct targets (green bold numbers). We can then perform a parameter update, which nudges every weight a tiny amount in this gradient direction. If we were to feed the same inputs to the RNN after the parameter update we would find that the scores of the correct characters (e.g. “e” in the first time step) would be slightly higher (e.g. 2.3 instead of 2.2), and the scores of incorrect characters would be slightly lower. We then repeat this process over and over many times until the network converges and its predictions are eventually consistent with the training data in that correct characters are always predicted next.
+
+A more technical explanation is that we use the standard Softmax classifier (also commonly referred to as the cross-entropy loss) on every output vector simultaneously. The RNN is trained with mini-batch Stochastic Gradient Descent and I like to use RMSProp or Adam (per-parameter adaptive learning rate methods) to stablilize the updates.
+
+Notice also that the first time the character “l” is input, the target is “l”, but the second time the target is “o”. The RNN therefore cannot rely on the input alone and must use its recurrent connection to keep track of the context to achieve this task.
+
+At test time, we feed a character into the RNN and get a distribution over what characters are likely to come next. We sample from this distribution, and feed it right back in to get the next letter. Repeat this process and you’re sampling text! Lets now train an RNN on different datasets and see what happens.
+
+To further clarify, for educational purposes I also wrote a minimal character-level RNN language model in Python/numpy. It is only about 100 lines long and hopefully it gives a concise, concrete and useful summary of the above if you’re better at reading code than text. We’ll now dive into example results, produced with the much more efficient Lua/Torch codebase.
+
+Fun with RNNs
+All 5 example character models below were trained with the code I’m releasing on Github. The input in each case is a single file with some text, and we’re training an RNN to predict the next character in the sequence.
+
+Paul Graham generator
+Lets first try a small dataset of English as a sanity check. My favorite fun dataset is the concatenation of Paul Graham’s essays. The basic idea is that there’s a lot of wisdom in these essays, but unfortunately Paul Graham is a relatively slow generator. Wouldn’t it be great if we could sample startup wisdom on demand? That’s where an RNN comes in.
+
+Concatenating all pg essays over the last ~5 years we get approximately 1MB text file, or about 1 million characters (this is considered a very small dataset by the way). Technical: Lets train a 2-layer LSTM with 512 hidden nodes (approx. 3.5 million parameters), and with dropout of 0.5 after each layer. We’ll train with batches of 100 examples and truncated backpropagation through time of length 100 characters. With these settings one batch on a TITAN Z GPU takes about 0.46 seconds (this can be cut in half with 50 character BPTT at negligible cost in performance). Without further ado, lets see a sample from the RNN:
+
+“The surprised in investors weren’t going to raise money. I’m not the company with the time there are all interesting quickly, don’t have to get off the same programmers. There’s a super-angel round fundraising, why do you can do. If you have a different physical investment are become in people who reduced in a startup with the way to argument the acquirer could see them just that you’re also the founders will part of users’ affords that and an alternation to the idea. [2] Don’t work at first member to see the way kids will seem in advance of a bad successful startup. And if you have to act the big company too.”
+
+Okay, clearly the above is unfortunately not going to replace Paul Graham anytime soon, but remember that the RNN had to learn English completely from scratch and with a small dataset (including where you put commas, apostrophes and spaces). I also like that it learns to support its own arguments (e.g. [2], above). Sometimes it says something that offers a glimmer of insight, such as “a company is a meeting to think to investors”. Here’s a link to 50K character sample if you’d like to see more.
+
+Temperature. We can also play with the temperature of the Softmax during sampling. Decreasing the temperature from 1 to some lower number (e.g. 0.5) makes the RNN more confident, but also more conservative in its samples. Conversely, higher temperatures will give more diversity but at cost of more mistakes (e.g. spelling mistakes, etc). In particular, setting temperature very near zero will give the most likely thing that Paul Graham might say:
+
+“is that they were all the same thing that was a startup is that they were all the same thing that was a startup is that they were all the same thing that was a startup is that they were all the same”
+
+looks like we’ve reached an infinite loop about startups.
+
+Shakespeare
+It looks like we can learn to spell English words. But how about if there is more structure and style in the data? To examine this I downloaded all the works of Shakespeare and concatenated them into a single (4.4MB) file. We can now afford to train a larger network, in this case lets try a 3-layer RNN with 512 hidden nodes on each layer. After we train the network for a few hours we obtain samples such as:
+
+PANDARUS:
+Alas, I think he shall be come approached and the day
+When little srain would be attain'd into being never fed,
+And who is but a chain and subjects of his death,
+I should not sleep.
+
+Second Senator:
+They are away this miseries, produced upon my soul,
+Breaking and strongly should be buried, when I perish
+The earth and thoughts of many states.
+
+DUKE VINCENTIO:
+Well, your wit is in the care of side and that.
+
+Second Lord:
+They would be ruled after this chamber, and
+my fair nues begun out of the fact, to be conveyed,
+Whose noble souls I'll have the heart of the wars.
+
+Clown:
+Come, sir, I will make did behold your worship.
+
+VIOLA:
+I'll drink it.
+Remember, all the RNN knows are characters, so in particular it samples both speaker’s names and the contents. Sometimes we also get relatively extented monologue passages, such as:
+
+VIOLA:
+Why, Salisbury must find his flesh and thought
+That which I am not aps, not a man and in fire,
+To show the reining of the raven and the wars
+To grace my hand reproach within, and not a fair are hand,
+That Caesar and my goodly father's world;
+When I was heaven of presence and our fleets,
+We spare with hours, but cut thy council I am great,
+Murdered and by thy master's ready there
+My power to give thee but so much as hell:
+Some service in the noble bondman here,
+Would show him to her wine.
+
+KING LEAR:
+O, if you were a feeble sight, the courtesy of your law,
+Your sight and several breath, will wear the gods
+With his heads, and my hands are wonder'd at the deeds,
+So drop upon your lordship's head, and your opinion
+Shall be against your honour.
+I can barely recognize these samples from actual Shakespeare :) If you like Shakespeare, you might appreciate this 100,000 character sample. Of course, you can also generate an infinite amount of your own samples at different temperatures with the provided code.
+
+Wikipedia
+We saw that the LSTM can learn to spell words and copy general syntactic structures. Lets further increase the difficulty and train on structured markdown. In particular, lets take the Hutter Prize 100MB dataset of raw Wikipedia and train an LSTM. Following Graves et al., I used the first 96MB for training, the rest for validation and ran a few models overnight. We can now sample Wikipedia articles! Below are a few fun excerpts. First, some basic markdown output:
+
+Naturalism and decision for the majority of Arab countries' capitalide was grounded
+by the Irish language by [[John Clair]], [[An Imperial Japanese Revolt]], associated 
+with Guangzham's sovereignty. His generals were the powerful ruler of the Portugal 
+in the [[Protestant Immineners]], which could be said to be directly in Cantonese 
+Communication, which followed a ceremony and set inspired prison, training. The 
+emperor travelled back to [[Antioch, Perth, October 25|21]] to note, the Kingdom 
+of Costa Rica, unsuccessful fashioned the [[Thrales]], [[Cynth's Dajoard]], known 
+in western [[Scotland]], near Italy to the conquest of India with the conflict. 
+Copyright was the succession of independence in the slop of Syrian influence that 
+was a famous German movement based on a more popular servicious, non-doctrinal 
+and sexual power post. Many governments recognize the military housing of the 
+[[Civil Liberalization and Infantry Resolution 265 National Party in Hungary]], 
+that is sympathetic to be to the [[Punjab Resolution]]
+(PJS)[http://www.humah.yahoo.com/guardian.
+cfm/7754800786d17551963s89.htm Official economics Adjoint for the Nazism, Montgomery 
+was swear to advance to the resources for those Socialism's rule, 
+was starting to signing a major tripad of aid exile.]]
+In case you were wondering, the yahoo url above doesn’t actually exist, the model just hallucinated it. Also, note that the model learns to open and close the parenthesis correctly. There’s also quite a lot of structured markdown that the model learns, for example sometimes it creates headings, lists, etc.:
+
+Sometimes the model snaps into a mode of generating random but valid XML:
+
+The model completely makes up the timestamp, id, and so on. Also, note that it closes the correct tags appropriately and in the correct nested order. Here are 100,000 characters of sampled wikipedia if you’re interested to see more.
+
+Algebraic Geometry (Latex)
+The results above suggest that the model is actually quite good at learning complex syntactic structures. Impressed by these results, my labmate (Justin Johnson) and I decided to push even further into structured territories and got a hold of this book on algebraic stacks/geometry. We downloaded the raw Latex source file (a 16MB file) and trained a multilayer LSTM. Amazingly, the resulting sampled Latex almost compiles. We had to step in and fix a few issues manually but then you get plausible looking math, it’s quite astonishing:
+
+
+Sampled (fake) algebraic geometry. Here's the actual pdf.
+Here’s another sample:
+
+
+More hallucinated algebraic geometry. Nice try on the diagram (right).
+As you can see above, sometimes the model tries to generate latex diagrams, but clearly it hasn’t really figured them out. I also like the part where it chooses to skip a proof (“Proof omitted.”, top left). Of course, keep in mind that latex has a relatively difficult structured syntactic format that I haven’t even fully mastered myself. For instance, here is a raw sample from the model (unedited):
+
+\begin{proof}
+We may assume that $\mathcal{I}$ is an abelian sheaf on $\mathcal{C}$.
+\item Given a morphism $\Delta : \mathcal{F} \to \mathcal{I}$
+is an injective and let $\mathfrak q$ be an abelian sheaf on $X$.
+Let $\mathcal{F}$ be a fibered complex. Let $\mathcal{F}$ be a category.
+\begin{enumerate}
+\item \hyperref[setain-construction-phantom]{Lemma}
+\label{lemma-characterize-quasi-finite}
+Let $\mathcal{F}$ be an abelian quasi-coherent sheaf on $\mathcal{C}$.
+Let $\mathcal{F}$ be a coherent $\mathcal{O}_X$-module. Then
+$\mathcal{F}$ is an abelian catenary over $\mathcal{C}$.
+\item The following are equivalent
+\begin{enumerate}
+\item $\mathcal{F}$ is an $\mathcal{O}_X$-module.
+\end{lemma}
+This sample from a relatively decent model illustrates a few common mistakes. For example, the model opens a \begin{proof} environment but then ends it with a \end{lemma}. This is an example of a problem we’d have to fix manually, and is likely due to the fact that the dependency is too long-term: By the time the model is done with the proof it has forgotten whether it was doing a proof or a lemma. Similarly, it opens an \begin{enumerate} but then forgets to close it. We observed that these became less common with larger/better models, but nonetheless, these are the kinds of mistakes that come up.
+
+Linux Source Code
+I wanted to push structured data to its limit, so for the final challenge I decided to use code. In particular, I took all the source and header files found in the Linux repo on Github, concatenated all of them in a single giant file (474MB of C code) (I was originally going to train only on the kernel but that by itself is only ~16MB). Then I trained several as-large-as-fits-on-my-GPU 3-layer LSTMs over a period of a few days. These models have about 10 million parameters, which is still on the lower end for RNN models. The results are superfun:
+
+
+The code looks really quite great overall. Of course, I don’t think it compiles but when you scroll through the generate code it feels very much like a giant C code base. Notice that the RNN peppers its code with comments here and there at random. It is also very good at making very few syntactic errors. For example, it uses strings properly, pointer notation, etc. It also opens and closes brackets {[ correctly and learns to indent its code very well. A common error is that it can’t keep track of variable names: It often uses undefined variables (e.g. rw above), declares variables it never uses (e.g. int error), or returns non-existing variables. Lets see a few more examples. Here’s another snippet that shows a wider array of operations that the RNN learns:
+
+Notice that in the second function the model compares tty == tty, which is vacuously true. On the other hand, at least the variable tty exists in the scope this time! In the last function, notice that the code does not return anything, which happens to be correct since the function signature is void. However, the first two functions were also declared void and did return values. This is again a form of a common mistake due to long-term interactions.
+
+Sometimes the model decides that it’s time to sample a new file. This is usually a very amusing part: The model first recites the GNU license character by character, samples a few includes, generates some macros and then dives into the code:
+
+There are too many fun parts to cover- I could probably write an entire blog post on just this part. I’ll cut it short for now, but here is 1MB of sampled Linux code for your viewing pleasure.
+
+Generating Baby Names
+Lets try one more for fun. Lets feed the RNN a large text file that contains 8000 baby names listed out, one per line (names obtained from here). We can feed this to the RNN and then generate new names! Here are some example names, only showing the ones that do not occur in the training data (90% don’t):
+
+Rudi Levette Berice Lussa Hany Mareanne Chrestina Carissy Marylen Hammine Janye Marlise Jacacrie Hendred Romand Charienna Nenotto Ette Dorane Wallen Marly Darine Salina Elvyn Ersia Maralena Minoria Ellia Charmin Antley Nerille Chelon Walmor Evena Jeryly Stachon Charisa Allisa Anatha Cathanie Geetra Alexie Jerin Cassen Herbett Cossie Velen Daurenge Robester Shermond Terisa Licia Roselen Ferine Jayn Lusine Charyanne Sales Sanny Resa Wallon Martine Merus Jelen Candica Wallin Tel Rachene Tarine Ozila Ketia Shanne Arnande Karella Roselina Alessia Chasty Deland Berther Geamar Jackein Mellisand Sagdy Nenc Lessie Rasemy Guen Gavi Milea Anneda Margoris Janin Rodelin Zeanna Elyne Janah Ferzina Susta Pey Castina
+
+You can see many more here. Some of my favorites include “Baby” (haha), “Killie”, “Char”, “R”, “More”, “Mars”, “Hi”, “Saddie”, “With” and “Ahbort”. Well that was fun.﻿ Of course, you can imagine this being quite useful inspiration when writing a novel, or naming a new startup :)
+
+Understanding what’s going on
+We saw that the results at the end of training can be impressive, but how does any of this work? Lets run two quick experiments to briefly peek under the hood.
+
+The evolution of samples while training
+First, it’s fun to look at how the sampled text evolves while the model trains. For example, I trained an LSTM of Leo Tolstoy’s War and Peace and then generated samples every 100 iterations of training. At iteration 100 the model samples random jumbles:
+
+tyntd-iafhatawiaoihrdemot  lytdws  e ,tfti, astai f ogoh eoase rrranbyne 'nhthnee e 
+plia tklrgd t o idoe ns,smtt   h ne etie h,hregtrs nigtike,aoaenns lng
+However, notice that at least it is starting to get an idea about words separated by spaces. Except sometimes it inserts two spaces. It also doesn’t know that comma is amost always followed by a space. At 300 iterations we see that the model starts to get an idea about quotes and periods:
+
+"Tmont thithey" fomesscerliund
+Keushey. Thom here
+sheulke, anmerenith ol sivh I lalterthend Bleipile shuwy fil on aseterlome
+coaniogennc Phe lism thond hon at. MeiDimorotion in ther thize."
+The words are now also separated with spaces and the model starts to get the idea about periods at the end of a sentence. At iteration 500:
+
+we counter. He stutn co des. His stanted out one ofler that concossions and was 
+to gearang reay Jotrets and with fre colt otf paitt thin wall. Which das stimn 
+the model has now learned to spell the shortest and most common words such as “we”, “He”, “His”, “Which”, “and”, etc. At iteration 700 we’re starting to see more and more English-like text emerge:
+
+Aftair fall unsuch that the hall for Prince Velzonski's that me of
+her hearly, and behs to so arwage fiving were to it beloge, pavu say falling misfort 
+how, and Gogition is so overelical and ofter.
+At iteration 1200 we’re now seeing use of quotations and question/exclamation marks. Longer words have now been learned as well:
+
+"Kite vouch!" he repeated by her
+door. "But I would be done and quarts, feeling, then, son is people...."
+Until at last we start to get properly spelled words, quotations, names, and so on by about iteration 2000:
+
+"Why do what that day," replied Natasha, and wishing to himself the fact the
+princess, Princess Mary was easier, fed in had oftened him.
+Pierre aking his soul came to the packs and drove up his father-in-law women.
+The picture that emerges is that the model first discovers the general word-space structure and then rapidly starts to learn the words; First starting with the short words and then eventually the longer ones. Topics and themes that span multiple words (and in general longer-term dependencies) start to emerge only much later.
+
+Visualizing the predictions and the “neuron” firings in the RNN
+Another fun visualization is to look at the predicted distributions over characters. In the visualizations below we feed a Wikipedia RNN model character data from the validation set (shown along the blue/green rows) and under every character we visualize (in red) the top 5 guesses that the model assigns for the next character. The guesses are colored by their probability (so dark red = judged as very likely, white = not very likely). For example, notice that there are stretches of characters where the model is extremely confident about the next letter (e.g., the model is very confident about characters during the http://www. sequence).
+
+The input character sequence (blue/green) is colored based on the firing of a randomly chosen neuron in the hidden representation of the RNN. Think about it as green = very excited and blue = not very excited (for those familiar with details of LSTMs, these are values between [-1,1] in the hidden state vector, which is just the gated and tanh’d LSTM cell state). Intuitively, this is visualizing the firing rate of some neuron in the “brain” of the RNN while it reads the input sequence. Different neurons might be looking for different patterns; Below we’ll look at 4 different ones that I found and thought were interesting or interpretable (many also aren’t):
+
+
+The neuron highlighted in this image seems to get very excited about URLs and turns off outside of the URLs. The LSTM is likely using this neuron to remember if it is inside a URL or not.
+
+The highlighted neuron here gets very excited when the RNN is inside the [[ ]] markdown environment and turns off outside of it. Interestingly, the neuron can't turn on right after it sees the character "[", it must wait for the second "[" and then activate. This task of counting whether the model has seen one or two "[" is likely done with a different neuron.
+
+Here we see a neuron that varies seemingly linearly across the [[ ]] environment. In other words its activation is giving the RNN a time-aligned coordinate system across the [[ ]] scope. The RNN can use this information to make different characters more or less likely depending on how early/late it is in the [[ ]] scope (perhaps?).
+
+Here is another neuron that has very local behavior: it is relatively silent but sharply turns off right after the first "w" in the "www" sequence. The RNN might be using this neuron to count up how far in the "www" sequence it is, so that it can know whether it should emit another "w", or if it should start the URL.
+Of course, a lot of these conclusions are slightly hand-wavy as the hidden state of the RNN is a huge, high-dimensional and largely distributed representation. These visualizations were produced with custom HTML/CSS/Javascript, you can see a sketch of what’s involved here if you’d like to create something similar.
+
+We can also condense this visualization by excluding the most likely predictions and only visualize the text, colored by activations of a cell. We can see that in addition to a large portion of cells that do not do anything interpretible, about 5% of them turn out to have learned quite interesting and interpretible algorithms:
+
+ 
+Again, what is beautiful about this is that we didn’t have to hardcode at any point that if you’re trying to predict the next character it might, for example, be useful to keep track of whether or not you are currently inside or outside of quote. We just trained the LSTM on raw data and it decided that this is a useful quantitity to keep track of. In other words one of its cells gradually tuned itself during training to become a quote detection cell, since this helps it better perform the final task. This is one of the cleanest and most compelling examples of where the power in Deep Learning models (and more generally end-to-end training) is coming from.
+
+Source Code
+I hope I’ve convinced you that training character-level language models is a very fun exercise. You can train your own models using the char-rnn code I released on Github (under MIT license). It takes one large text file and trains a character-level model that you can then sample from. Also, it helps if you have a GPU or otherwise training on CPU will be about a factor of 10x slower. In any case, if you end up training on some data and getting fun results let me know! And if you get lost in the Torch/Lua codebase remember that all it is is just a more fancy version of this 100-line gist.
+
+Brief digression. The code is written in Torch 7, which has recently become my favorite deep learning framework. I’ve only started working with Torch/LUA over the last few months and it hasn’t been easy (I spent a good amount of time digging through the raw Torch code on Github and asking questions on their gitter to get things done), but once you get a hang of things it offers a lot of flexibility and speed. I’ve also worked with Caffe and Theano in the past and I believe Torch, while not perfect, gets its levels of abstraction and philosophy right better than others. In my view the desirable features of an effective framework are:
+
+CPU/GPU transparent Tensor library with a lot of functionality (slicing, array/matrix operations, etc. )
+An entirely separate code base in a scripting language (ideally Python) that operates over Tensors and implements all Deep Learning stuff (forward/backward, computation graphs, etc)
+It should be possible to easily share pretrained models (Caffe does this well, others don’t), and crucially
+NO compilation step (or at least not as currently done in Theano). The trend in Deep Learning is towards larger, more complex networks that are are time-unrolled in complex graphs. It is critical that these do not compile for a long time or development time greatly suffers. Second, by compiling one gives up interpretability and the ability to log/debug effectively. If there is an option to compile the graph once it has been developed for efficiency in prod that’s fine.
+Further Reading
+Before the end of the post I also wanted to position RNNs in a wider context and provide a sketch of the current research directions. RNNs have recently generated a significant amount of buzz and excitement in the field of Deep Learning. Similar to Convolutional Networks they have been around for decades but their full potential has only recently started to get widely recognized, in large part due to our growing computational resources. Here’s a brief sketch of a few recent developments (definitely not complete list, and a lot of this work draws from research back to 1990s, see related work sections):
+
+In the domain of NLP/Speech, RNNs transcribe speech to text, perform machine translation, generate handwritten text, and of course, they have been used as powerful language models (Sutskever et al.) (Graves) (Mikolov et al.) (both on the level of characters and words). Currently it seems that word-level models work better than character-level models, but this is surely a temporary thing.
+
+Computer Vision. RNNs are also quickly becoming pervasive in Computer Vision. For example, we’re seeing RNNs in frame-level video classification, image captioning (also including my own work and many others), video captioning and very recently visual question answering. My personal favorite RNNs in Computer Vision paper is Recurrent Models of Visual Attention, both due to its high-level direction (sequential processing of images with glances) and the low-level modeling (REINFORCE learning rule that is a special case of policy gradient methods in Reinforcement Learning, which allows one to train models that perform non-differentiable computation (taking glances around the image in this case)). I’m confident that this type of hybrid model that consists of a blend of CNN for raw perception coupled with an RNN glance policy on top will become pervasive in perception, especially for more complex tasks that go beyond classifying some objects in plain view.
+
+Inductive Reasoning, Memories and Attention. Another extremely exciting direction of research is oriented towards addressing the limitations of vanilla recurrent networks. One problem is that RNNs are not inductive: They memorize sequences extremely well, but they don’t necessarily always show convincing signs of generalizing in the correct way (I’ll provide pointers in a bit that make this more concrete). A second issue is they unnecessarily couple their representation size to the amount of computation per step. For instance, if you double the size of the hidden state vector you’d quadruple the amount of FLOPS at each step due to the matrix multiplication. Ideally, we’d like to maintain a huge representation/memory (e.g. containing all of Wikipedia or many intermediate state variables), while maintaining the ability to keep computation per time step fixed.
+
+The first convincing example of moving towards these directions was developed in DeepMind’s Neural Turing Machines paper. This paper sketched a path towards models that can perform read/write operations between large, external memory arrays and a smaller set of memory registers (think of these as our working memory) where the computation happens. Crucially, the NTM paper also featured very interesting memory addressing mechanisms that were implemented with a (soft, and fully-differentiable) attention model. The concept of soft attention has turned out to be a powerful modeling feature and was also featured in Neural Machine Translation by Jointly Learning to Align and Translate for Machine Translation and Memory Networks for (toy) Question Answering. In fact, I’d go as far as to say that
+
+The concept of attention is the most interesting recent architectural innovation in neural networks.
+
+Now, I don’t want to dive into too many details but a soft attention scheme for memory addressing is convenient because it keeps the model fully-differentiable, but unfortunately one sacrifices efficiency because everything that can be attended to is attended to (but softly). Think of this as declaring a pointer in C that doesn’t point to a specific address but instead defines an entire distribution over all addresses in the entire memory, and dereferencing the pointer returns a weighted sum of the pointed content (that would be an expensive operation!). This has motivated multiple authors to swap soft attention models for hard attention where one samples a particular chunk of memory to attend to (e.g. a read/write action for some memory cell instead of reading/writing from all cells to some degree). This model is significantly more philosophically appealing, scalable and efficient, but unfortunately it is also non-differentiable. This then calls for use of techniques from the Reinforcement Learning literature (e.g. REINFORCE) where people are perfectly used to the concept of non-differentiable interactions. This is very much ongoing work but these hard attention models have been explored, for example, in Inferring Algorithmic Patterns with Stack-Augmented Recurrent Nets, Reinforcement Learning Neural Turing Machines, and Show Attend and Tell.
+
+People. If you’d like to read up on RNNs I recommend theses from Alex Graves, Ilya Sutskever and Tomas Mikolov. For more about REINFORCE and more generally Reinforcement Learning and policy gradient methods (which REINFORCE is a special case of) David Silver’s class, or one of Pieter Abbeel’s classes.
+
+Code. If you’d like to play with training RNNs I hear good things about keras or passage for Theano, the code released with this post for Torch, or this gist for raw numpy code I wrote a while ago that implements an efficient, batched LSTM forward and backward pass. You can also have a look at my numpy-based NeuralTalk which uses an RNN/LSTM to caption images, or maybe this Caffe implementation by Jeff Donahue.
+
+Conclusion
+We’ve learned about RNNs, how they work, why they have become a big deal, we’ve trained an RNN character-level language model on several fun datasets, and we’ve seen where RNNs are going. You can confidently expect a large amount of innovation in the space of RNNs, and I believe they will become a pervasive and critical component to intelligent systems.
+
+Lastly, to add some meta to this post, I trained an RNN on the source file of this blog post. Unfortunately, at about 46K characters I haven’t written enough data to properly feed the RNN, but the returned sample (generated with low temperature to get a more typical sample) is:
+
+I've the RNN with and works, but the computed with program of the 
+RNN with and the computed of the RNN with with and the code
+Yes, the post was about RNN and how well it works, so clearly this works :). See you next time!
+
+Under the hood, each primitive autograd operator is really two functions that operate on Tensors. The forward function computes output Tensors from input Tensors. The backward function receives the gradient of the output Tensors with respect to some scalar value, and computes the gradient of the input Tensors with respect to that same scalar value.
+
+In PyTorch we can easily define our own autograd operator by defining a subclass of torch.autograd.Function and implementing the forward and backward functions. We can then use our new autograd operator by constructing an instance and calling it like a function, passing Tensors containing input data.
+
+Computational graphs and autograd are a very powerful paradigm for defining complex operators and automatically taking derivatives; however for large neural networks raw autograd can be a bit too low-level.
+
+When building neural networks we frequently think of arranging the computation into layers, some of which have learnable parameters which will be optimized during learning.
+
+In TensorFlow, packages like Keras, TensorFlow-Slim, and TFLearn provide higher-level abstractions over raw computational graphs that are useful for building neural networks.
+
+In PyTorch, the nn package serves this same purpose. The nn package defines a set of Modules, which are roughly equivalent to neural network layers. A Module receives input Tensors and computes output Tensors, but may also hold internal state such as Tensors containing learnable parameters. The nn package also defines a set of useful loss functions that are commonly used when training neural networks.
+
+I was intrigued by the name of perplexity when I first heard this term in natural language processing. So I thought of writing an article. Trust me on this perplexity is not at all what it sounds.
+Generally, perplexity is a state of confusion or a complicated and difficult situation or thing. Technically, perplexity is used for measuring the utility of a language model. The language model is to estimate the probability of a sentence or a sequence of words or an upcoming word. In this article, you will get to know what perplexity really is and is really simple to understand.
+Introduction
+Perplexity is a measurement of how well a probability model predicts test data. Basically, It’s a probability distribution over a sentence, phrases, a sequence of words, etc. Perplexity is a variant that we use as a metric for evaluating language models. A low perplexity indicates the probability distribution is good at predicting the sample. Let’s see how it is used while evaluating language models.
+Maths behind perplexity
+Basically, the best model is the one that best predicts an unseen test set. The perplexity of a language model on a test set is the inverse probability of the test set, normalized by the number of words. For a test set with words W = w_1, w_2, …, w_N, the perplexity of the model on the test set is:
+
+This way the longer the sentence the less probable it will be. Then again by the chain rule:
+
+Perplexity is a function of the probability of the sentence. The meaning of the inversion in perplexity means that whenever we minimize the perplexity we maximize the probability.
+The perplexity of a probability distribution
+The perplexity of a discrete probability distribution p is defined as the exponentiation of the entropy:
+
+Source: https://en.wikipedia.org/wiki/Perplexity
+where H(p) is the entropy of the distribution p(x) and x is a random variable over all its possible values
+The entropy is a measure of the expected or average number of bits required to encode the outcome of the random variable. Entropy can be seen as an information quantity whereas perplexity can be seen as the number of choices the random variable has.
+Example:
+Consider tossing a fair coin, probabilities of coming up heads or tails.
+The entropy of the unknown result of the next toss of the coin is maximized i.e. if heads and tails both have equal probability 1/2.
+
+So, Entropy is 1.
+
+Perplexity is 2.
+Entropy uses logarithms while Perplexity with its e^ brings it back to a linear scale. A good language model should predict high word probabilities. Therefore, the smaller the perplexity the better.
+Perplexity as a branching factor
+An interpretation of any exponentiated entropy measure is as a branching factor (the weighted average number of choices a random variable has): entropy measures uncertainty in bits but in the exponentiated form, it’s measured as the size of an equally weighted distribution with equivalent uncertainty. That is, exp(−H(p)) is how many sides you need on a fair die to get the same uncertainty as to the distribution p
+Entropy differs by a constant depending on whether you measured using base-2 or natural logarithms but perplexity is the same with whichever base you want.
+How perplexity and probability are correlated?
+Minimizing perplexity is the same as maximizing the probability
+Higher probability means lower Perplexity
+The more information, the lower perplexity
+Lower perplexity means a better model
+The lower the perplexity, the closer we are to the true model
+
+In information theory, perplexity is a measurement of how well a probability distribution or probability model predicts a sample. It may be used to compare probability models. A low perplexity indicates the probability distribution is good at predicting the sample.
+
+
+Contents
+1	Perplexity of a probability distribution
+2	Perplexity of a probability model
+3	Perplexity per word
+4	References
+Perplexity of a probability distribution
+The perplexity PP of a discrete probability distribution p is defined as
+
+{\displaystyle {\mathit {PP}}(p):=2^{H(p)}=2^{-\sum _{x}p(x)\log _{2}p(x)}=\prod _{x}p(x)^{-p(x)}}{\displaystyle {\mathit {PP}}(p):=2^{H(p)}=2^{-\sum _{x}p(x)\log _{2}p(x)}=\prod _{x}p(x)^{-p(x)}}
+where H(p) is the entropy (in bits) of the distribution and x ranges over events. (The base need not be 2: The perplexity is independent of the base, provided that the entropy and the exponentiation use the same base.) This measure is also known in some domains as the (order-1 true) diversity.
+
+Perplexity of a random variable X may be defined as the perplexity of the distribution over its possible values x.
+
+In the special case where p models a fair k-sided die (a uniform distribution over k discrete events), its perplexity is k. A random variable with perplexity k has the same uncertainty as a fair k-sided die, and one is said to be "k-ways perplexed" about the value of the random variable. (Unless it is a fair k-sided die, more than k values will be possible, but the overall uncertainty is no greater because some of these values will have probability greater than 1/k, decreasing the overall value while summing.)
+
+Perplexity is sometimes used as a measure of how hard a prediction problem is. This is not always accurate. If you have two choices, one with probability 0.9, then your chances of a correct guess are 90 percent using the optimal strategy. The perplexity is 2−0.9 log2 0.9 - 0.1 log2 0.1= 1.38. The inverse of the perplexity (which, in the case of the fair k-sided die, represents the probability of guessing correctly), is 1/1.38 = 0.72, not 0.9.
+
+The perplexity is the exponentiation of the entropy, which is a more clearcut quantity. The entropy is a measure of the expected, or "average", number of bits required to encode the outcome of the random variable, using a theoretical optimal variable-length code, e.g. It can equivalently be regarded as the expected information gain from learning the outcome of the random variable.
+
+Perplexity of a probability model
+A model of an unknown probability distribution p, may be proposed based on a training sample that was drawn from p. Given a proposed probability model q, one may evaluate q by asking how well it predicts a separate test sample x1, x2, ..., xN also drawn from p. The perplexity of the model q is defined as
+
+{\displaystyle b^{-{\frac {1}{N}}\sum _{i=1}^{N}\log _{b}q(x_{i})}}b^{{-{\frac  {1}{N}}\sum _{{i=1}}^{N}\log _{b}q(x_{i})}}
+where {\displaystyle b}b is customarily 2. Better models q of the unknown distribution p will tend to assign higher probabilities q(xi) to the test events. Thus, they have lower perplexity: they are less surprised by the test sample.
+
+The exponent above may be regarded as the average number of bits needed to represent a test event xi if one uses an optimal code based on q. Low-perplexity models do a better job of compressing the test sample, requiring few bits per test element on average because q(xi) tends to be high.
+
+The exponent may also be regarded as a cross-entropy,
+
+{\displaystyle H({\tilde {p}},q)=-\sum _{x}{\tilde {p}}(x)\log _{2}q(x)}H({\tilde  {p}},q)=-\sum _{x}{\tilde  {p}}(x)\log _{2}q(x)
+where {\displaystyle {\tilde {p}}}{\tilde  {p}} denotes the empirical distribution of the test sample (i.e., {\displaystyle {\tilde {p}}(x)=n/N}{\tilde  {p}}(x)=n/N if x appeared n times in the test sample of size N).
+
+Perplexity per word
+In natural language processing, perplexity is a way of evaluating language models. A language model is a probability distribution over entire sentences or texts.
+
+Using the definition of perplexity for a probability model, one might find, for example, that the average sentence xi in the test sample could be coded in 190 bits (i.e., the test sentences had an average log-probability of -190). This would give an enormous model perplexity of 2190 per sentence. However, it is more common to normalize for sentence length and consider only the number of bits per word. Thus, if the test sample's sentences comprised a total of 1,000 words, and could be coded using a total of 7.95 bits per word, one could report a model perplexity of 27.95 = 247 per word. In other words, the model is as confused on test data as if it had to choose uniformly and independently among 247 possibilities for each word.
+
+The lowest perplexity that has been published on the Brown Corpus (1 million words of American English of varying topics and genres) as of 1992 is indeed about 247 per word, corresponding to a cross-entropy of log2247 = 7.95 bits per word or 1.75 bits per letter[1] using a trigram model. It is often possible to achieve lower perplexity on more specialized corpora, as they are more predictable.
+
+Again, simply guessing that the next word in the Brown corpus is the word "the" will have an accuracy of 7 percent, not 1/247 = 0.4 percent, as a naive use of perplexity as a measure of predictiveness might lead one to believe. This guess is based on the unigram statistics of the Brown corpus, not on the trigram statistics, which yielded the word perplexity 247. Using trigram statistics would further improve the chances of a correct guess.
+
+Making Predictions with Sequences
+by Jason Brownlee on September 4, 2017 in Long Short-Term Memory Networks
+Tweet  Share
+Last Updated on August 14, 2019
+
+Sequence prediction is different from other types of supervised learning problems.
+
+The sequence imposes an order on the observations that must be preserved when training models and making predictions.
+
+Generally, prediction problems that involve sequence data are referred to as sequence prediction problems, although there are a suite of problems that differ based on the input and output sequences.
+
+In this tutorial, you will discover the different types of sequence prediction problems.
+
+After completing this tutorial, you will know:
+
+The 4 types of sequence prediction problems.
+Definitions for each type of sequence prediction problem by the experts.
+Real-world examples of each type of sequence prediction problem.
+Kick-start your project with my new book Long Short-Term Memory Networks With Python, including step-by-step tutorials and the Python source code files for all examples.
+
+Let’s get started.
+
+Gentle Introduction to Making Predictions with Sequences
+Gentle Introduction to Making Predictions with Sequences
+Photo by abstrkt.ch, some rights reserved.
+
+Tutorial Overview
+This tutorial is divided into 5 parts; they are:
+
+Sequence
+Sequence Prediction
+Sequence Classification
+Sequence Generation
+Sequence to Sequence Prediction
+Sequence
+Often we deal with sets in applied machine learning such as a train or test sets of samples.
+
+Each sample in the set can be thought of as an observation from the domain.
+
+In a set, the order of the observations is not important.
+
+A sequence is different. The sequence imposes an explicit order on the observations.
+
+The order is important. It must be respected in the formulation of prediction problems that use the sequence data as input or output for the model.
+
+Sequence Prediction
+Sequence prediction involves predicting the next value for a given input sequence.
+
+For example:
+
+Given: 1, 2, 3, 4, 5
+Predict: 6
+Example of a Sequence Prediction Problem
+Example of a Sequence Prediction Problem
+
+Sequence prediction attempts to predict elements of a sequence on the basis of the preceding elements
+
+— Sequence Learning: From Recognition and Prediction to Sequential Decision Making, 2001.
+
+A prediction model is trained with a set of training sequences. Once trained, the model is used to perform sequence predictions. A prediction consists in predicting the next items of a sequence. This task has numerous applications such as web page prefetching, consumer product recommendation, weather forecasting and stock market prediction.
+
+— CPT+: Decreasing the time/space complexity of the Compact Prediction Tree, 2015
+
+Sequence prediction may also generally be referred to as “sequence learning“.
+
+Learning of sequential data continues to be a fundamental task and a challenge in pattern recognition and machine learning. Applications involving sequential data may require prediction of new events, generation of new sequences, or decision making such as classification of sequences or sub-sequences.
+
+— On Prediction Using Variable Order Markov Models, 2004.
+
+Technically, we could refer to all of the following problems in this post as a type of sequence prediction problem. This can make things confusing for beginners.
+
+Some examples of sequence prediction problems include:
+
+Weather Forecasting. Given a sequence of observations about the weather over time, predict the expected weather tomorrow.
+Stock Market Prediction. Given a sequence of movements of a security over time, predict the next movement of the security.
+Product Recommendation. Given a sequence of past purchases of a customer, predict the next purchase of a customer.
+Sequence Classification
+Sequence classification involves predicting a class label for a given input sequence.
+
+For example:
+
+Given: 1, 2, 3, 4, 5
+Predict: “good” or “bad”
+Example of a Sequence Classification Problem
+Example of a Sequence Classification Problem
+
+The objective of sequence classification is to build a classification model using a labeled dataset D so that the model can be used to predict the class label of an unseen sequence.
+
+— Chapter 14, Data Classification: Algorithms and Applications, 2015
+
+The input sequence may be comprised of real values or discrete values. In the latter case, such problems may be referred to as discrete sequence classification.
+
+Some examples of sequence classification problems include:
+
+DNA Sequence Classification. Given a DNA sequence of ACGT values, predict whether the sequence codes for a coding or non-coding region.
+Anomaly Detection. Given a sequence of observations, predict whether the sequence is anomalous or not.
+Sentiment Analysis. Given a sequence of text such as a review or a tweet, predict whether sentiment of the text is positive or negative.
+Sequence Generation
+Sequence generation involves generating a new output sequence that has the same general characteristics as other sequences in the corpus.
+
+For example:
+
+Given: [1, 3, 5], [7, 9, 11]
+Predict: [3, 5 ,7]
+[recurrent neural networks] can be trained for sequence generation by processing real data sequences one step at a time and predicting what comes next. Assuming the predictions are probabilistic, novel sequences can be generated from a trained network by iteratively sampling from the network’s output distribution, then feeding in the sample as input at the next step. In other words by making the network treat its inventions as if they were real, much like a person dreaming
+
+— Generating Sequences With Recurrent Neural Networks, 2013.
+
+Some examples of sequence generation problems include:
+
+Text Generation. Given a corpus of text, such as the works of Shakespeare, generate new sentences or paragraphs of text that read like Shakespeare.
+Handwriting Prediction. Given a corpus of handwriting examples, generate handwriting for new phrases that has the properties of handwriting in the corpus.
+Music Generation. Given a corpus of examples of music, generate new musical pieces that have the properties of the corpus.
+Sequence generation may also refer to the generation of a sequence given a single observation as input.
+
+An example is the automatic textual description of images.
+
+Image Caption Generation. Given an image as input, generate a sequence of words that describe an image.
+Example of a Sequence Generation Problem
+Example of a Sequence Generation Problem
+
+Being able to automatically describe the content of an image using properly formed English sentences is a very challenging task, but it could have great impact, for instance by helping visually impaired people better understand the content of images on the web. […] Indeed, a description must capture not only the objects contained in an image, but it also must express how these objects relate to each other as well as their attributes and the activities they are involved in. Moreover, the above semantic knowledge has to be expressed in a natural language like English, which means that a language model is needed in addition to visual understanding.
+
+— Show and Tell: A Neural Image Caption Generator, 2015
+
+Sequence-to-Sequence Prediction
+Sequence-to-sequence prediction involves predicting an output sequence given an input sequence.
+
+For example:
+
+Given: 1, 2, 3, 4, 5
+Predict: 6, 7, 8, 9, 10
+Example of a Sequence-to-Sequence Prediction Problem.png
+Example of a Sequence-to-Sequence Prediction Problem
+
+Despite their flexibility and power, [deep neural networks] can only be applied to problems whose inputs and targets can be sensibly encoded with vectors of fixed dimensionality. It is a significant limitation, since many important problems are best expressed with sequences whose lengths are not known a-priori. For example, speech recognition and machine translation are sequential problems. Likewise, question answering can also be seen as mapping a sequence of words representing the question to a sequence of words representing the answer.
+
+— Sequence to Sequence Learning with Neural Networks, 2014
+
+It is a subtle but challenging extension of sequence prediction where rather than predicting a single next value in the sequence, a new sequence is predicted that may or may not have the same length or be of the same time as the input sequence.
+
+This type of problem has recently seen a lot of study in the area of automatic text translation (e.g. translating English to French) and may be referred to by the abbreviation seq2seq.
+
+seq2seq learning, at its core, uses recurrent neural networks to map variable-length input sequences to variable-length output sequences. While relatively new, the seq2seq approach has achieved state-of-the-art results in not only its original application – machine translation.
+
+— Multi-task Sequence to Sequence Learning, 2016.
+
+If the input and output sequences are a time series, then the problem may be referred to as multi-step time series forecasting.
+
+Multi-Step Time Series Forecasting. Given a time series of observations, predict a sequence of observations for a range of future time steps.
+Text Summarization. Given a document of text, predict a shorter sequence of text that describes the salient parts of the source document.
+Program Execution. Given the textual description program or mathematical equation, predict the sequence of characters that describes the correct output.
+Further Reading
+This section provides more resources on the topic if you are looking go deeper.
+
+Sequence on Wikipedia
+CPT+: Decreasing the time/space complexity of the Compact Prediction Tree, 2015
+On Prediction Using Variable Order Markov Models, 2004
+An Introduction to Sequence Prediction, 2016
+Sequence Learning: From Recognition and Prediction to Sequential Decision Making, 2001
+Chapter 14, Discrete Sequence Classification, Data Classification: Algorithms and Applications, 2015
+Generating Sequences With Recurrent Neural Networks, 2013
+Show and Tell: A Neural Image Caption Generator, 2015
+Multi-task Sequence to Sequence Learning, 2016
+Sequence to Sequence Learning with Neural Networks, 2014
+Recursive and direct multi-step forecasting: the best of both worlds, 2012
+Summary
+In this tutorial, you discovered the different types of sequence prediction problems.
+
+Specifically, you learned:
+
+The 4 types of sequence prediction problems.
+Definitions for each type of sequence prediction problem by the experts.
+Real-world examples of each type of sequence prediction problem.
+
+A Gentle Introduction to Exploding Gradients in Neural Networks
+by Jason Brownlee on December 18, 2017 in Long Short-Term Memory Networks
+Tweet  Share
+Last Updated on August 14, 2019
+
+Exploding gradients are a problem where large error gradients accumulate and result in very large updates to neural network model weights during training.
+
+This has the effect of your model being unstable and unable to learn from your training data.
+
+In this post, you will discover the problem of exploding gradients with deep artificial neural networks.
+
+After completing this post, you will know:
+
+What exploding gradients are and the problems they cause during training.
+How to know whether you may have exploding gradients with your network model.
+How you can fix the exploding gradient problem with your network.
+Kick-start your project with my new book Long Short-Term Memory Networks With Python, including step-by-step tutorials and the Python source code files for all examples.
+
+Let’s get started.
+
+Update Oct/2018: Removed mention of ReLU as a solution.
+A Gentle Introduction to Exploding Gradients in Recurrent Neural Networks
+A Gentle Introduction to Exploding Gradients in Recurrent Neural Networks
+Photo by Taro Taylor, some rights reserved.
+
+What Are Exploding Gradients?
+An error gradient is the direction and magnitude calculated during the training of a neural network that is used to update the network weights in the right direction and by the right amount.
+
+In deep networks or recurrent neural networks, error gradients can accumulate during an update and result in very large gradients. These in turn result in large updates to the network weights, and in turn, an unstable network. At an extreme, the values of weights can become so large as to overflow and result in NaN values.
+
+The explosion occurs through exponential growth by repeatedly multiplying gradients through the network layers that have values larger than 1.0.
+
+What Is the Problem with Exploding Gradients?
+In deep multilayer Perceptron networks, exploding gradients can result in an unstable network that at best cannot learn from the training data and at worst results in NaN weight values that can no longer be updated.
+
+… exploding gradients can make learning unstable.
+
+— Page 282, Deep Learning, 2016.
+
+In recurrent neural networks, exploding gradients can result in an unstable network that is unable to learn from training data and at best a network that cannot learn over long input sequences of data.
+
+… the exploding gradients problem refers to the large increase in the norm of the gradient during training. Such events are due to the explosion of the long term components
+
+— On the difficulty of training recurrent neural networks, 2013.
+
+How do You Know if You Have Exploding Gradients?
+There are some subtle signs that you may be suffering from exploding gradients during the training of your network, such as:
+
+The model is unable to get traction on your training data (e.g. poor loss).
+The model is unstable, resulting in large changes in loss from update to update.
+The model loss goes to NaN during training.
+If you have these types of problems, you can dig deeper to see if you have a problem with exploding gradients.
+
+There are some less subtle signs that you can use to confirm that you have exploding gradients.
+
+The model weights quickly become very large during training.
+The model weights go to NaN values during training.
+The error gradient values are consistently above 1.0 for each node and layer during training.
+How to Fix Exploding Gradients?
+There are many approaches to addressing exploding gradients; this section lists some best practice approaches that you can use.
+
+1. Re-Design the Network Model
+In deep neural networks, exploding gradients may be addressed by redesigning the network to have fewer layers.
+
+There may also be some benefit in using a smaller batch size while training the network.
+
+In recurrent neural networks, updating across fewer prior time steps during training, called truncated Backpropagation through time, may reduce the exploding gradient problem.
+
+2. Use Long Short-Term Memory Networks
+In recurrent neural networks, gradient exploding can occur given the inherent instability in the training of this type of network, e.g. via Backpropagation through time that essentially transforms the recurrent network into a deep multilayer Perceptron neural network.
+
+Exploding gradients can be reduced by using the Long Short-Term Memory (LSTM) memory units and perhaps related gated-type neuron structures.
+
+Adopting LSTM memory units is a new best practice for recurrent neural networks for sequence prediction.
+
+3. Use Gradient Clipping
+Exploding gradients can still occur in very deep Multilayer Perceptron networks with a large batch size and LSTMs with very long input sequence lengths.
+
+If exploding gradients are still occurring, you can check for and limit the size of gradients during the training of your network.
+
+This is called gradient clipping.
+
+Dealing with the exploding gradients has a simple but very effective solution: clipping gradients if their norm exceeds a given threshold.
+
+— Section 5.2.4, Vanishing and Exploding Gradients, Neural Network Methods in Natural Language Processing, 2017.
+
+Specifically, the values of the error gradient are checked against a threshold value and clipped or set to that threshold value if the error gradient exceeds the threshold.
+
+To some extent, the exploding gradient problem can be mitigated by gradient clipping (thresholding the values of the gradients before performing a gradient descent step).
+
+— Page 294, Deep Learning, 2016.
+
+In the Keras deep learning library, you can use gradient clipping by setting the clipnorm or clipvalue arguments on your optimizer before training.
+
+Good default values are clipnorm=1.0 and clipvalue=0.5.
+
+Usage of optimizers in the Keras API
+4. Use Weight Regularization
+Another approach, if exploding gradients are still occurring, is to check the size of network weights and apply a penalty to the networks loss function for large weight values.
+
+This is called weight regularization and often an L1 (absolute weights) or an L2 (squared weights) penalty can be used.
+
+Using an L1 or L2 penalty on the recurrent weights can help with exploding gradients
+
+— On the difficulty of training recurrent neural networks, 2013.
+
+In the Keras deep learning library, you can use weight regularization by setting the kernel_regularizer argument on your layer and using an L1 or L2 regularizer.
+
+Usage of regularizers in the Keras API
+Further Reading
+This section provides more resources on the topic if you are looking to go deeper.
+
+Posts
+How to Fix Vanishing Gradients Using the Rectified Linear Activation Unit (ReLU)
+Books
+Deep Learning, 2016.
+Neural Network Methods in Natural Language Processing, 2017.
+Papers
+On the difficulty of training recurrent neural networks, 2013.
+Learning long-term dependencies with gradient descent is difficult, 1994.
+Understanding the exploding gradient problem, 2012.
+Articles
+Why is it a problem to have exploding gradients in a neural net (especially in an RNN)?
+How does LSTM help prevent the vanishing (and exploding) gradient problem in a recurrent neural network?
+Rectifier (neural networks)
+Keras API
+Usage of optimizers in the Keras API
+Usage of regularizers in the Keras API
+Summary
+In this post, you discovered the problem of exploding gradients when training deep neural network models.
+
+Specifically, you learned:
+
+What exploding gradients are and the problems they cause during training.
+How to know whether you may have exploding gradients with your network model.
+How you can fix the exploding gradient problem with your network.
+Do you have any questions?
+Ask your questions in the comments below and I will do my best to answer.
+
+
+Natural language processing (NLP) is a subfield of linguistics, computer science, and artificial intelligence concerned with the interactions between computers and human language, in particular how to program computers to process and analyze large amounts of natural language data. The goal is a computer capable of "understanding" the contents of documents, including the contextual nuances of the language within them. The technology can then accurately extract information and insights contained in the documents as well as categorize and organize the documents themselves.
+
+Challenges in natural language processing frequently involve speech recognition, natural language understanding, and natural language generation.
+
+
+Contents
+1	History
+1.1	Symbolic NLP (1950s – early 1990s)
+1.2	Statistical NLP (1990s–2010s)
+1.3	Neural NLP (present)
+2	Methods: Rules, statistics, neural networks
+2.1	Statistical methods
+2.2	Neural networks
+3	Common NLP tasks
+3.1	Text and speech processing
+3.2	Morphological analysis
+3.3	Syntactic analysis
+3.4	Lexical semantics (of individual words in context)
+3.5	Relational semantics (semantics of individual sentences)
+3.6	Discourse (semantics beyond individual sentences)
+3.7	Higher-level NLP applications
+4	General tendencies and (possible) future directions
+4.1	Cognition and NLP
+5	See also
+6	References
+7	Further reading
+8	External links
+History
+Further information: History of natural language processing
+Natural language processing has its roots in the 1950s. Already in 1950, Alan Turing published an article titled "Computing Machinery and Intelligence" which proposed what is now called the Turing test as a criterion of intelligence, a task that involves the automated interpretation and generation of natural language, but at the time not articulated as a problem separate from artificial intelligence.
+
+Symbolic NLP (1950s – early 1990s)
+The premise of symbolic NLP is well-summarized by John Searle's Chinese room experiment: Given a collection of rules (e.g., a Chinese phrasebook, with questions and matching answers), the computer emulates natural language understanding (or other NLP tasks) by applying those rules to the data it is confronted with.
+
+1950s: The Georgetown experiment in 1954 involved fully automatic translation of more than sixty Russian sentences into English. The authors claimed that within three or five years, machine translation would be a solved problem.[2] However, real progress was much slower, and after the ALPAC report in 1966, which found that ten-year-long research had failed to fulfill the expectations, funding for machine translation was dramatically reduced. Little further research in machine translation was conducted until the late 1980s when the first statistical machine translation systems were developed.
+1960s: Some notably successful natural language processing systems developed in the 1960s were SHRDLU, a natural language system working in restricted "blocks worlds" with restricted vocabularies, and ELIZA, a simulation of a Rogerian psychotherapist, written by Joseph Weizenbaum between 1964 and 1966. Using almost no information about human thought or emotion, ELIZA sometimes provided a startlingly human-like interaction. When the "patient" exceeded the very small knowledge base, ELIZA might provide a generic response, for example, responding to "My head hurts" with "Why do you say your head hurts?".
+1970s: During the 1970s, many programmers began to write "conceptual ontologies", which structured real-world information into computer-understandable data. Examples are MARGIE (Schank, 1975), SAM (Cullingford, 1978), PAM (Wilensky, 1978), TaleSpin (Meehan, 1976), QUALM (Lehnert, 1977), Politics (Carbonell, 1979), and Plot Units (Lehnert 1981). During this time, the first many chatterbots were written (e.g., PARRY).
+1980s: The 1980s and early 1990s mark the hey-day of symbolic methods in NLP. Focus areas of the time included research on rule-based parsing (e.g., the development of HPSG as a computational operationalization of generative grammar), morphology (e.g., two-level morphology[3]), semantics (e.g., Lesk algorithm), reference (e.g., within Centering Theory[4]) and other areas of natural language understanding (e.g., in the Rhetorical Structure Theory). Other lines of research were continued, e.g., the development of chatterbots with Racter and Jabberwacky. An important development (that eventually led to the statistical turn in the 1990s) was the rising importance of quantitative evaluation in this period.[5]
+Statistical NLP (1990s–2010s)
+Up to the 1980s, most natural language processing systems were based on complex sets of hand-written rules. Starting in the late 1980s, however, there was a revolution in natural language processing with the introduction of machine learning algorithms for language processing. This was due to both the steady increase in computational power (see Moore's law) and the gradual lessening of the dominance of Chomskyan theories of linguistics (e.g. transformational grammar), whose theoretical underpinnings discouraged the sort of corpus linguistics that underlies the machine-learning approach to language processing.[6]
+
+1990s: Many of the notable early successes on statistical methods in NLP occurred in the field of machine translation, due especially to work at IBM Research. These systems were able to take advantage of existing multilingual textual corpora that had been produced by the Parliament of Canada and the European Union as a result of laws calling for the translation of all governmental proceedings into all official languages of the corresponding systems of government. However, most other systems depended on corpora specifically developed for the tasks implemented by these systems, which was (and often continues to be) a major limitation in the success of these systems. As a result, a great deal of research has gone into methods of more effectively learning from limited amounts of data.
+2000s: With the growth of the web, increasing amounts of raw (unannotated) language data has become available since the mid-1990s. Research has thus increasingly focused on unsupervised and semi-supervised learning algorithms. Such algorithms can learn from data that has not been hand-annotated with the desired answers or using a combination of annotated and non-annotated data. Generally, this task is much more difficult than supervised learning, and typically produces less accurate results for a given amount of input data. However, there is an enormous amount of non-annotated data available (including, among other things, the entire content of the World Wide Web), which can often make up for the inferior results if the algorithm used has a low enough time complexity to be practical.
+Neural NLP (present)
+In the 2010s, representation learning and deep neural network-style machine learning methods became widespread in natural language processing, due in part to a flurry of results showing that such techniques[7][8] can achieve state-of-the-art results in many natural language tasks, for example in language modeling,[9] parsing,[10][11] and many others. This is increasingly important in medicine and healthcare, where NLP is being used to analyze notes and text in electronic health records that would otherwise be inaccessible for study when seeking to improve care.[12]
+
+Methods: Rules, statistics, neural networks
+In the early days, many language-processing systems were designed by symbolic methods, i.e., the hand-coding of a set of rules, coupled with a dictionary lookup:[13][14] such as by writing grammars or devising heuristic rules for stemming.
+
+More recent systems based on machine-learning algorithms have many advantages over hand-produced rules:
+
+The learning procedures used during machine learning automatically focus on the most common cases, whereas when writing rules by hand it is often not at all obvious where the effort should be directed.
+Automatic learning procedures can make use of statistical inference algorithms to produce models that are robust to unfamiliar input (e.g. containing words or structures that have not been seen before) and to erroneous input (e.g. with misspelled words or words accidentally omitted). Generally, handling such input gracefully with handwritten rules, or, more generally, creating systems of handwritten rules that make soft decisions, is extremely difficult, error-prone and time-consuming.
+Systems based on automatically learning the rules can be made more accurate simply by supplying more input data. However, systems based on handwritten rules can only be made more accurate by increasing the complexity of the rules, which is a much more difficult task. In particular, there is a limit to the complexity of systems based on handwritten rules, beyond which the systems become more and more unmanageable. However, creating more data to input to machine-learning systems simply requires a corresponding increase in the number of man-hours worked, generally without significant increases in the complexity of the annotation process.
+Despite the popularity of machine learning in NLP research, symbolic methods are still (2020) commonly used:
+
+when the amount of training data is insufficient to successfully apply machine learning methods, e.g., for the machine translation of low-resource languages such as provided by the Apertium system,
+for preprocessing in NLP pipelines, e.g., tokenization, or
+for postprocessing and transforming the output of NLP pipelines, e.g., for knowledge extraction from syntactic parses.
+Statistical methods
+Since the so-called "statistical revolution"[15][16] in the late 1980s and mid-1990s, much natural language processing research has relied heavily on machine learning. The machine-learning paradigm calls instead for using statistical inference to automatically learn such rules through the analysis of large corpora (the plural form of corpus, is a set of documents, possibly with human or computer annotations) of typical real-world examples.
+
+Many different classes of machine-learning algorithms have been applied to natural-language-processing tasks. These algorithms take as input a large set of "features" that are generated from the input data. Increasingly, however, research has focused on statistical models, which make soft, probabilistic decisions based on attaching real-valued weights to each input feature (complex-valued embeddings,[17] and neural networks in general have also been proposed, for e.g. speech[18]). Such models have the advantage that they can express the relative certainty of many different possible answers rather than only one, producing more reliable results when such a model is included as a component of a larger system.
+
+Some of the earliest-used machine learning algorithms, such as decision trees, produced systems of hard if-then rules similar to existing hand-written rules. However, part-of-speech tagging introduced the use of hidden Markov models to natural language processing, and increasingly, research has focused on statistical models, which make soft, probabilistic decisions based on attaching real-valued weights to the features making up the input data. The cache language models upon which many speech recognition systems now rely are examples of such statistical models. Such models are generally more robust when given unfamiliar input, especially input that contains errors (as is very common for real-world data), and produce more reliable results when integrated into a larger system comprising multiple subtasks.
+
+Since the neural turn, statistical methods in NLP research have been largely replaced by neural networks. However, they continue to be relevant for contexts in which statistical interpretability and transparency is required.
+
+Neural networks
+Further information: Artificial neural network
+A major drawback of statistical methods is that they require elaborate feature engineering. Since 2015,[19] the field has thus largely abandoned statistical methods and shifted to neural networks for machine learning. Popular techniques include the use of word embeddings to capture semantic properties of words, and an increase in end-to-end learning of a higher-level task (e.g., question answering) instead of relying on a pipeline of separate intermediate tasks (e.g., part-of-speech tagging and dependency parsing). In some areas, this shift has entailed substantial changes in how NLP systems are designed, such that deep neural network-based approaches may be viewed as a new paradigm distinct from statistical natural language processing. For instance, the term neural machine translation (NMT) emphasizes the fact that deep learning-based approaches to machine translation directly learn sequence-to-sequence transformations, obviating the need for intermediate steps such as word alignment and language modeling that was used in statistical machine translation (SMT). Latest works tend to use non-technical structure of a given task to build proper neural network.[20]
+
+Common NLP tasks
+The following is a list of some of the most commonly researched tasks in natural language processing. Some of these tasks have direct real-world applications, while others more commonly serve as subtasks that are used to aid in solving larger tasks.
+
+Though natural language processing tasks are closely intertwined, they can be subdivided into categories for convenience. A coarse division is given below.
+
+Text and speech processing
+Optical character recognition (OCR)
+Given an image representing printed text, determine the corresponding text.
+Speech recognition
+Given a sound clip of a person or people speaking, determine the textual representation of the speech. This is the opposite of text to speech and is one of the extremely difficult problems colloquially termed "AI-complete" (see above). In natural speech there are hardly any pauses between successive words, and thus speech segmentation is a necessary subtask of speech recognition (see below). In most spoken languages, the sounds representing successive letters blend into each other in a process termed coarticulation, so the conversion of the analog signal to discrete characters can be a very difficult process. Also, given that words in the same language are spoken by people with different accents, the speech recognition software must be able to recognize the wide variety of input as being identical to each other in terms of its textual equivalent.
+Speech segmentation
+Given a sound clip of a person or people speaking, separate it into words. A subtask of speech recognition and typically grouped with it.
+Text-to-speech
+Given a text, transform those units and produce a spoken representation. Text-to-speech can be used to aid the visually impaired.[21]
+Word segmentation (Tokenization)
+Separate a chunk of continuous text into separate words. For a language like English, this is fairly trivial, since words are usually separated by spaces. However, some written languages like Chinese, Japanese and Thai do not mark word boundaries in such a fashion, and in those languages text segmentation is a significant task requiring knowledge of the vocabulary and morphology of words in the language. Sometimes this process is also used in cases like bag of words (BOW) creation in data mining.
+Morphological analysis
+Lemmatization
+The task of removing inflectional endings only and to return the base dictionary form of a word which is also known as a lemma. Lemmatization is another technique for reducing words to their normalized form. But in this case, the transformation actually uses a dictionary to map words to their actual form.[22]
+Morphological segmentation
+Separate words into individual morphemes and identify the class of the morphemes. The difficulty of this task depends greatly on the complexity of the morphology (i.e., the structure of words) of the language being considered. English has fairly simple morphology, especially inflectional morphology, and thus it is often possible to ignore this task entirely and simply model all possible forms of a word (e.g., "open, opens, opened, opening") as separate words. In languages such as Turkish or Meitei,[23] a highly agglutinated Indian language, however, such an approach is not possible, as each dictionary entry has thousands of possible word forms.
+Part-of-speech tagging
+Given a sentence, determine the part of speech (POS) for each word. Many words, especially common ones, can serve as multiple parts of speech. For example, "book" can be a noun ("the book on the table") or verb ("to book a flight"); "set" can be a noun, verb or adjective; and "out" can be any of at least five different parts of speech.
+Stemming
+The process of reducing inflected (or sometimes derived) words to a base form (e.g., "close" will be the root for "closed", "closing", "close", "closer" etc.). Stemming yields similar results as lemmatization, but does so on grounds of rules, not a dictionary.
+Syntactic analysis
+Grammar induction[24]
+Generate a formal grammar that describes a language's syntax.
+Sentence breaking (also known as "sentence boundary disambiguation")
+Given a chunk of text, find the sentence boundaries. Sentence boundaries are often marked by periods or other punctuation marks, but these same characters can serve other purposes (e.g., marking abbreviations).
+Parsing
+Determine the parse tree (grammatical analysis) of a given sentence. The grammar for natural languages is ambiguous and typical sentences have multiple possible analyses: perhaps surprisingly, for a typical sentence there may be thousands of potential parses (most of which will seem completely nonsensical to a human). There are two primary types of parsing: dependency parsing and constituency parsing. Dependency parsing focuses on the relationships between words in a sentence (marking things like primary objects and predicates), whereas constituency parsing focuses on building out the parse tree using a probabilistic context-free grammar (PCFG) (see also stochastic grammar).
+Lexical semantics (of individual words in context)
+Lexical semantics
+What is the computational meaning of individual words in context?
+Distributional semantics
+How can we learn semantic representations from data?
+Named entity recognition (NER)
+Given a stream of text, determine which items in the text map to proper names, such as people or places, and what the type of each such name is (e.g. person, location, organization). Although capitalization can aid in recognizing named entities in languages such as English, this information cannot aid in determining the type of named entity, and in any case, is often inaccurate or insufficient. For example, the first letter of a sentence is also capitalized, and named entities often span several words, only some of which are capitalized. Furthermore, many other languages in non-Western scripts (e.g. Chinese or Arabic) do not have any capitalization at all, and even languages with capitalization may not consistently use it to distinguish names. For example, German capitalizes all nouns, regardless of whether they are names, and French and Spanish do not capitalize names that serve as adjectives.
+Sentiment analysis (see also Multimodal sentiment analysis)
+Extract subjective information usually from a set of documents, often using online reviews to determine "polarity" about specific objects. It is especially useful for identifying trends of public opinion in social media, for marketing.
+Terminology extraction
+The goal of terminology extraction is to automatically extract relevant terms from a given corpus.
+Word sense disambiguation (WSD)
+Many words have more than one meaning; we have to select the meaning which makes the most sense in context. For this problem, we are typically given a list of words and associated word senses, e.g. from a dictionary or an online resource such as WordNet.
+Entity linking
+Many words - typically proper names - refer to named entities; here we have to select the entity (a famous individual, a location, a company, etc.) which is referred to in context.
+Relational semantics (semantics of individual sentences)
+Relationship extraction
+Given a chunk of text, identify the relationships among named entities (e.g. who is married to whom).
+Semantic parsing
+Given a piece of text (typically a sentence), produce a formal representation of its semantics, either as a graph (e.g., in AMR parsing) or in accordance with a logical formalism (e.g., in DRT parsing). This challenge typically includes aspects of several more elementary NLP tasks from semantics (e.g., semantic role labelling, word sense disambiguation) and can be extended to include full-fledged discourse analysis (e.g., discourse analysis, coreference; see Natural language understanding below).
+Semantic role labelling (see also implicit semantic role labelling below)
+Given a single sentence, identify and disambiguate semantic predicates (e.g., verbal frames), then identify and classify the frame elements (semantic roles).
+Discourse (semantics beyond individual sentences)
+Coreference resolution
+Given a sentence or larger chunk of text, determine which words ("mentions") refer to the same objects ("entities"). Anaphora resolution is a specific example of this task, and is specifically concerned with matching up pronouns with the nouns or names to which they refer. The more general task of coreference resolution also includes identifying so-called "bridging relationships" involving referring expressions. For example, in a sentence such as "He entered John's house through the front door", "the front door" is a referring expression and the bridging relationship to be identified is the fact that the door being referred to is the front door of John's house (rather than of some other structure that might also be referred to).
+Discourse analysis
+This rubric includes several related tasks. One task is discourse parsing, i.e., identifying the discourse structure of a connected text, i.e. the nature of the discourse relationships between sentences (e.g. elaboration, explanation, contrast). Another possible task is recognizing and classifying the speech acts in a chunk of text (e.g. yes-no question, content question, statement, assertion, etc.).
+Implicit semantic role labelling
+Given a single sentence, identify and disambiguate semantic predicates (e.g., verbal frames) and their explicit semantic roles in the current sentence (see Semantic role labelling above). Then, identify semantic roles that are not explicitly realized in the current sentence, classify them into arguments that are explicitly realized elsewhere in the text and those that are not specified, and resolve the former against the local text. A closely related task is zero anaphora resolution, i.e., the extension of coreference resolution to pro-drop languages.
+Recognizing textual entailment
+Given two text fragments, determine if one being true entails the other, entails the other's negation, or allows the other to be either true or false.[25]
+Topic segmentation and recognition
+Given a chunk of text, separate it into segments each of which is devoted to a topic, and identify the topic of the segment.
+Argument mining
+The goal of argument mining is the automatic extraction and identification of argumentative structures from natural language text with the aid of computer programs.[26] Such argumentative structures include the premise, conclusions, the argument scheme and the relationship between the main and subsidiary argument, or the main and counter-argument within discourse.[27][28]
+Higher-level NLP applications
+Automatic summarization (text summarization)
+Produce a readable summary of a chunk of text. Often used to provide summaries of the text of a known type, such as research papers, articles in the financial section of a newspaper.
+Book generation
+Not an NLP task proper but an extension of natural language generation and other NLP tasks is the creation of full-fledged books. The first machine-generated book was created by a rule-based system in 1984 (Racter, The policeman's beard is half-constructed).[29] The first published work by a neural network was published in 2018, 1 the Road, marketed as a novel, contains sixty million words. Both these systems are basically elaborate but non-sensical (semantics-free) language models. The first machine-generated science book was published in 2019 (Beta Writer, Lithium-Ion Batteries, Springer, Cham).[30] Unlike Racter and 1 the Road, this is grounded on factual knowledge and based on text summarization.
+Dialogue management
+Computer systems intended to converse with a human.
+Document AI
+A Document AI platform sits on top of the NLP technology enabling users with no prior experience of artificial intelligence, machine learning or NLP to quickly train a computer to extract the specific data they need from different document types. NLP-powered Document AI enables non-technical teams to quickly access information hidden in documents, for example, lawyers, business analysts and accountants.[31]
+Grammatical error correction
+Grammatical error detection and correction involves a great band-width of problems on all levels of linguistic analysis (phonology/orthography, morphology, syntax, semantics, pragmatics). Grammatical error correction is impactful since it affects hundreds of millions of people that use or acquire English as a second language. It has thus been subject to a number of shared tasks since 2011.[32][33][34] As far as orthography, morphology, syntax and certain aspects of semantics are concerned, and due to the development of powerful neural language models such as GPT-2, this can now (2019) be considered a largely solved problem and is being marketed in various commercial applications.
+Machine translation
+Automatically translate text from one human language to another. This is one of the most difficult problems, and is a member of a class of problems colloquially termed "AI-complete", i.e. requiring all of the different types of knowledge that humans possess (grammar, semantics, facts about the real world, etc.) to solve properly.
+Natural language generation (NLG):
+Convert information from computer databases or semantic intents into readable human language.
+Natural language understanding (NLU)
+Convert chunks of text into more formal representations such as first-order logic structures that are easier for computer programs to manipulate. Natural language understanding involves the identification of the intended semantic from the multiple possible semantics which can be derived from a natural language expression which usually takes the form of organized notations of natural language concepts. Introduction and creation of language metamodel and ontology are efficient however empirical solutions. An explicit formalization of natural language semantics without confusions with implicit assumptions such as closed-world assumption (CWA) vs. open-world assumption, or subjective Yes/No vs. objective True/False is expected for the construction of a basis of semantics formalization.[35]
+Question answering
+Given a human-language question, determine its answer. Typical questions have a specific right answer (such as "What is the capital of Canada?"), but sometimes open-ended questions are also considered (such as "What is the meaning of life?").
+General tendencies and (possible) future directions
+Based on long-standing trends in the field, it is possible to extrapolate future directions of NLP. As of 2020, three trends among the topics of the long-standing series of CoNLL Shared Tasks can be observed:[36]
+
+Interest on increasingly abstract, "cognitive" aspects of natural language (1999-2001: shallow parsing, 2002-03: named entity recognition, 2006-09/2017-18: dependency syntax, 2004-05/2008-09 semantic role labelling, 2011-12 coreference, 2015-16: discourse parsing, 2019: semantic parsing).
+Increasing interest in multilinguality, and, potentially, multimodality (English since 1999; Spanish, Dutch since 2002; German since 2003; Bulgarian, Danish, Japanese, Portuguese, Slovenian, Swedish, Turkish since 2006; Basque, Catalan, Chinese, Greek, Hungarian, Italian, Turkish since 2007; Czech since 2009; Arabic since 2012; 2017: 40+ languages; 2018: 60+/100+ languages)
+Elimination of symbolic representations (rule-based over supervised towards weakly supervised methods, representation learning and end-to-end systems)
+Cognition and NLP
+Most higher-level NLP applications involve aspects that emulate intelligent behaviour and apparent comprehension of natural language. More broadly speaking, the technical operationalization of increasingly advanced aspects of cognitive behaviour represents one of the developmental trajectories of NLP (see trends among CoNLL shared tasks above).
+
+Cognition refers to "the mental action or process of acquiring knowledge and understanding through thought, experience, and the senses."[37] Cognitive science is the interdisciplinary, scientific study of the mind and its processes.[38] Cognitive linguistics is an interdisciplinary branch of linguistics, combining knowledge and research from both psychology and linguistics.[39] Especially during the age of symbolic NLP, the area of computational linguistics maintained strong ties with cognitive studies.
+
+As an example, George Lakoff offers a methodology to build natural language processing (NLP) algorithms through the perspective of cognitive science, along with the findings of cognitive linguistics,[40] with two defining aspects:
+
+Apply the theory of conceptual metaphor, explained by Lakoff as “the understanding of one idea, in terms of another” which provides an idea of the intent of the author.[41] For example, consider the English word “big”. When used in a comparison (“That is a big tree”), the author's intent is to imply that the tree is ”physically large” relative to other trees or the authors experience. When used metaphorically (”Tomorrow is a big day”), the author’s intent to imply ”importance”. The intent behind other usages, like in ”She is a big person” will remain somewhat ambiguous to a person and a cognitive NLP algorithm alike without additional information.
+Assign relative measures of meaning to a word, phrase, sentence or piece of text based on the information presented before and after the piece of text being analyzed, e.g., by means of a probabilistic context-free grammar (PCFG). The mathematical equation for such algorithms is presented in US patent 9269353:
+
+RMM, is the Relative Measure of Meaning
+token, is any block of text, sentence, phrase or word
+N, is the number of tokens being analyzed
+PMM, is the Probable Measure of Meaning based on a corpora
+d, is the location of the token along the sequence of N-1 tokens
+PF, is the Probability Function specific to a language
+Ties with cognitive linguistics are part of the historical heritage of NLP, but they have been less frequently addressed since the statistical turn during the 1990s. Nevertheless, approaches to develop cognitive models towards technically operationalizable frameworks have been pursued in the context of various frameworks, e.g., of cognitive grammar,[42] functional grammar,[43] construction grammar,[44] computational psycholinguistics and cognitive neuroscience (e.g., ACT-R), however, with limited uptake in mainstream NLP (as measured by presence on major conferences[45] of the ACL). More recently, ideas of cognitive NLP have been revived as an approach to achieve explainability, e.g., under the notion of "cognitive AI".[46] Likewise, ideas of cognitive NLP are inherent to neural models multimodal NLP (although rarely made explicit).[47]
+
+
+READ NEXT
+Exploratory Data Analysis
+Exploratory Data Analysis: Functions, Types & Tools
+Neural Networks have surely saved us many at times, the way we have used them for different use cases if simply phenomenal. This concept of deep learning was in talks for decades but because of computational issues, it was side talked for a few years. Deep Learning has got its hype again, many think that it has come a few years ago but that ain’t true. 
+
+With computational issues, there were many other issues with a neural network too. 
+
+One such is Exploding gradient.
+
+In this article you will learn about:
+
+What is exploding gradient and what issues did it cause?
+How to identify it?
+How to rectify it?
+What is exploding gradient and how does it hamper us?
+It can be understood as a recurrent neural network. For those who don’t understand what a recurrent neural network is, can be intuited as a Neural network who gives feedback to its own self after every iteration of the self. Here feedback means the changing of the weight.
+
+
+Source: Research gate.
+
+In gradient descent we try to find the global minimum of the cost function which will be the optimal solution for us.
+
+
+In this, the flow of information is from x1 to y3, in between we see h0,h1 etc which are the hidden layers. These hidden layers add biases and weight which is referred to as w. While propagating the information from y3 to x1, it will have to go through the hidden layers. With every iteration, the weights are set again. In RNN’s the weights are set to itself for a hidden layer itself too. That term is called Wrec which stands for Weight recurring.
+
+The output value at y3 is multiplied by the weights of h2 which is then given to h1 whose weights are multiplied by that of h1 and thus this goes on. Here the thing that we have to understand is that if the weights that are multiplied by the output of y3 are less than 1 then with time the actual value will diminish. Similarly, if the weights that are multiplied are more than one so eventually the value will become exponentially larger than the usual one. 
+
+So for it to not change the value of the weights has to be equal to one. 
+
+So here, in the situation where the value of the weights is larger than 1, that problem is called exploding gradient because it hampers the gradient descent algorithm. When the weights are less than 1 then it is called vanishing gradient because the value of the gradient becomes considerably small with time. The actual weights are greater than one and thus the output becomes exponentially larger at the end which hinders the accuracy and thus model training. A network with the problem of exploding gradient won’t be able to learn from its training data. This is a serious problem.
+
+How to identify exploding gradients?
+There are a few ways by which you can get an idea of whether your model is suffering from exploding gradients or not. They are:
+
+If the model weights become unexpectedly large in the end.
+Your model has a poor loss
+Or the model displays NaN loss whilst training.
+The gradient value for error persists over 1.0 for every subsequent iteration during training.
+How to deal with an exploding gradient?
+Use LSTM’s (Long short term memory)
+LSTM’s store the information and then is tolled against the values of the previous iterations. Here what happens is the value of Wrec is equalled to 1 which later doesn’t really impact the gradient.
+
+
+The sign sigma is for sigmoid activation function, tanh is for the tangent hyperbolic activation function. The value x which is coming out from ht is the final output value.
+
+Xt is the value that is added to the system, more like an input vector. 
+
+There’s a lot more to it which you can understand and read from here.
+
+Gradient Clipping
+
+In really simple terms, it can be understood as clipping the size of the gradient by limiting it to a certain range of acceptable values. 
+
+SEE ALSO
+
+NEWS
+Intel Releases New Update For oneAPI Toolkit
+This is a process that is done before the gradient descent step takes place.
+
+You can read more about gradient clipping from the research paper here.
+
+Weight Regularization
+
+In this what we do is penalise the network’s loss function by regularising the loss. 
+
+We use L1 regularisation or L2 regularisation which adds the square of the value to it.
+
+These regularisations techniques: L1 and L2 can be used for controlling the exploding gradients. You can read more from the research paper from here. 
+
+Conclusion
+This article is aimed to discuss the issues that we may have whilst training a neural network in the step of backpropagation. This issue is addressed by the name exploding gradient when the weight recurring is greater than 1 and vanishing gradient when weight recurring is less than 1. We had also discussed how to identify the problem of exploding gradients which is by identifying and observing the loss and the weights of the model.
+
+Later we halted the article with a few solutions to our problem. LSTM is one of the most prominently used solutions for the same and apart from that, we had discussed gradient clipping and regularization techniques.
+
+Hope you liked the article.
+
+What Do You Think?
+
+The Relationship Between Perplexity And Entropy In NLP
+September 24, 2020 by Ravi Charan
+
+perplexity and entropy
+Perplexity is a common metric to use when evaluating language models. For example, scikit-learn’s implementation of Latent Dirichlet Allocation (a topic-modeling algorithm) includes perplexity as a built-in metric.
+
+In this post, I will define perplexity and then discuss entropy, the relation between the two, and how it arises naturally in natural language processing applications.
+
+Context
+A quite general setup in many Natural Language tasks is that you have a language L and want to build a model M for the language. The “language” could be a specific genre/corpus like “English Wikipedia”, “Nigerian Twitter”, or “Shakespeare” or (conceptually at least) just a generic like “French.”
+
+Specifically by a language L, we mean a process for generating text. For clarity, we will consider the case where we are modeling sentences and the text consists of sequence words ending with an end of sentence “word.” But you can replace “word” with “token” and “sentence” with “document” to generalize to any context.
+
+What is a “process”? For our purposes, we can think of a process as a collection of probability distributions. Given a history h consisting of a series of previous words in a sentence, the language L is the probability that the next word is w:
+
+perplexity and entropy
+A language is a collection of probability distribution
+For example, I am willing to wager that if L is “English”:
+
+L(dog | The quick brown fox jumps over the lazy brown) ≈ 1
+L(ipsum | Lorem) ≈ 1
+L(wings | Buffalo buffalo buffalo Buffalo buffalo) ≈ 0
+Similarly, given an entire sentence s, we can evaluate L(s) the probability of the sentence occurring. If we include a special beginning of sentence “word” w_0 and let the n-th “word” be the end-of-sentence “word”, we get
+
+
+The Language L gives the probability of a sentence s
+However it is common to leave out the first term in the product as well, or sometimes to work with an even longer starting context.
+
+It is surprisingly easy to get a perfect replica of L of (say) spoken American English. Just flag down any native English speaker walking down the street. Of course, we are usually interested in teaching a computer the model (hence, Machine Learning). So we will let M be whatever language model we have managed to build on a computer.
+
+This setup, with a language L and model M is quite general and plays a role in a variety of Natural Language tasks: speech-to-text, autocorrect, autocomplete, machine translation – the list goes on. Autocomplete is the most obvious example: given the words someone has typed so far, try to guess what they might type next by picking the highest-probability completion.¹
+
+
+
+Perplexity
+Given a language model M, we can use a held-out dev (validation) set to compute the perplexity of a sentence. The perplexity on a sentence s is defined as:
+
+
+Perplexity of a language model M
+You will notice from the second line that this is the inverse of the geometric mean of the terms in the product’s denominator. Since each word has its probability (conditional on the history) computed once, we can interpret this as being a per-word metric. This means that, all else the same, the perplexity is not affected by sentence length.
+
+In general, we want our probabilities to be high, which means the perplexity is low. If all the probabilities were 1, then the perplexity would be 1 and the model would perfectly predict the text. Conversely, for poorer language models, the perplexity will be higher.
+
+It’s hard to provide a benchmark for perplexity because, like most Natural Language tasks, the metric is highly dependent on the vocabulary size. Given a corpus, a smaller vocabulary means that other words will all be replaced with an <oov> (out-of-vocabulary) token, instantly increasing the apparent quality of any language model trained on it
+
+Here are some benchmarks:
+
+State of the Art. For WikiText-103, a selection of ~28,000 high-quality Wikipedia articles and a large (0.4% OOV rate) vocabulary, the state-of-the-art perplexity for a language model (as of this writing) is 10.8.
+Worst-case-scenario. On any dataset, the baseline model is to just guess a word in the vocabulary randomly with equal probability for each. In this case, the perplexity is just the vocabulary size: 267,735 for WikiText-103, but substantially smaller for WikiText-2 (33,278). 30,000, in general, is a pretty reasonable size for a language model’s vocabulary.
+Best-case-scenario. I said above that the “best” possible perplexity is 1. But for that to be true, there could only be one possible sentence in a language, which is quite boring.² A recent paper exploring text-generation uses OpenAI’s GPT-2 (large version with perplexity 22.1 on WikiText-103). On their dataset of choice (WebText, which GPT-2 was trained on), they find a perplexity of 12.4. But, crucially, they find that, while their model is capable of generating text with much lower perplexity (1.5!), the generated text is either repetitive or incoherent. Staying closer to human perplexity is better!
+This last point is very important. There is a lower bound on perplexity fixed by the language itself. We will see this mathematically below. But this points to a general feature of metrics in NLP: an easy-to-evaluate metric like perplexity is not necessarily the best predictor of the true performance of a model. Perplexity is good for development (validation) but not necessarily for evaluation. The gold standard for evaluation remains human evaluation.
+
+Do you find this in-depth technical education about NLP applications to be useful? Subscribe below to be updated when we release new relevant content.
+
+Entropy
+Entropy is a slippery concept in physics, but is quite straightforward in information theory. Suppose you have a process (like a language L that generates words). At each step in the process, there is some probability p that the thing that happened (the event) was going to happen. The amount of surprisal is –log(p) where the logarithm is taken in any base you want (equivalent to changing units). Low probability events have high surprisal. Events that were certain to happen (p=1) have 0 surprisals. Events that are impossible (p=0) have infinity surprisal.
+
+The entropy is the expected value of the surprisal across all possible events indexed by i:
+
+
+Entropy of a probability distribution p
+So, the entropy is the average amount of surprise when something happens.
+
+Entropy in base 2 is also optimal number of bits it takes to store the information about what happened, by Claude Shannon’s source coding theorem. For example if I told you that a full-length tweet of 280 characters had an entropy of 1 bit per character, that means that, by the laws of mathematics, no matter what Twitter does, they will always have to have 280 bits (35 bytes) of storage for that tweet in their database. (In practice of course, they have to have quite a bit more).
+
+In the context of our language model, we’ll have to make one tweak. Given that we are interested in sentences s (sequences of events) of length n, we’ll define the entropy rate per word (event) as:
+
+
+where the sum is over all sentences of length n and L(s) is the probability of the sentence. Finally, a technical point: we want to define the entropy of the language L (or language model M) regardless of sentence length n. So finally we define
+
+
+Final definition of entropy for a language (model)
+The Shannon-McMillan-Breiman Theorem
+Under anodyne assumptions³ the entropy simplifies even further. The essential insight is that, if we take a long enough string of text, each sentence occurs in proportion to its probability anyways. So there is no need to sum over possible sentences. We get:
+
+
+Simplification of entropy with the Shannon-McMillan-Breiman Theorem
+This tells us that we can just take a large (n is big) text instead of trying to sample from diverse texts.
+
+Cross-Entropy
+Suppose we mistakenly think that our language model M is correct. Then we observe text generated by the actual language L without realizing it. The cross-entropy H(L,M) is what we measure the entropy to be
+
+
+Cross entropy for our language model M
+Where the second line again applies the Shannon-McMillan-Breiman theorem.
+
+Crucially, this tells us we can estimate the cross-entropy H(L,M) by just measuring log M(s) for a random sample of sentences (the first line) or a sufficiently large chunk of text (the second line).
+
+
+
+The Cross-Entropy is Bounded by the True Entropy of the Language
+The cross-entropy has a nice property that H(L) ≤ H(L,M). Omitting the limit and the normalization 1/n in the proof:
+
+
+In the third line, the first term is just the cross-entropy (remember the limits and 1/n terms are implicit). The second term is the Kullback-Leibler divergence (or KL-divergence). By Gibbs’ inequality the KL-divergence is non-negative and is 0 only if the models L and M are the same. The KL-divergence is sort of like a distance measure (telling you how different L and M are).⁴
+
+Relationship between Perplexity and Entropy
+To recap:
+
+Evaluating the entropy of M on a sufficiently long (n large) set of dev/validation/test data generated by L approximates the cross-entropy H(L,M), by the Shannon-McMillan-Breiman theorem. We approximate the limit just by taking a large enough evaluation set.
+Furthermore this cross-entropy is bounded below by the true entropy of the language generating our data
+
+Definition of perplexity and simplification of cross-entropy for a large enough dataset
+Now all that remains to do is show the relationship between the two. Assuming we took the logarithm in base e:
+
+
+Relationship between perplexity and entropy
+If we took the logarithm in base 2, use 2 for the base, etc.
+
+So, to summarize:
+
+We build a language model M for the true language generating the data, L.
+We evaluate the perplexity or, equivalently, the cross-entropy of M (with respect to L).
+The perplexity of M is bounded below by the perplexity of the actual language L (likewise, cross-entropy).
+The perplexity measures the amount of “randomness” in our model. If the perplexity is 3 (per word) then that means the model had a 1-in-3 chance of guessing (on average) the next word in the text. For this reason, it is sometimes called the average branching factor.
+
+Conclusion
+I want to leave you with one interesting note. It is an open question what the true entropy of written English text is (leaving aside other formats, like “Twitter” or “Spoken English” and other languages, like “Russian.”)
+
+By the inequality H(L) ≤ H(L,M), one way to get an upper bound on the perplexity or entropy is to create a language model, and we saw some perplexities above.
+
+In this context, we are usually interested in the entropy per-character (likewise perplexity per-character). When measured using the log base 2, this becomes bits-per-character (BPC).
+
+Claude Shannon estimated (in a time before computers) that the entropy of written English was between 0.6 and 1.3 bits per character. OpenAI’s GPT-2, mentioned above, achieves about 1 bit per character on (yet another) Wikipedia dataset.
+
+Keeping in mind that there are about 5 characters per word in written English, this corresponds to about 5 bits, or a perplexity of 2⁵=32. Note this is substantially higher than the perplexities discussed as state-of-the-art benchmarks! What gives? Remember not to compare perplexities across vocabularies or datasets: the word length may not be the same.
+
+How LSTM networks solve the problem of vanishing gradients
+A simple, straightforward mathematical explanation
+Nir Arbel
+Nir Arbel
+Follow
+
+Dec 21, 2018 · 10 min read
+
+Greenport New York
+When diving into the theory behind Recurrent Neural Networks (RNNs) and Long Short-Term Memory (LSTM) networks, two main questions arise:
+1. Why do RNNs suffer from vanishing and exploding gradients?
+2. How do LSTMs keep the gradients from vanishing or explode?
+When I tried answering these questions, I searched for a mathematical explanation to get a better understanding of how these networks work. I had a hard time finding proofs that were understandable and clear enough for me. After reading the recommended papers and known blogs dealing with these questions I wrote an explanation that worked for me and made me feel I better understand the problem and solution.
+RNNs and vanishing gradients
+RNNs enable modelling time-dependent and sequential data tasks, such as stock market prediction, machine translation, text generation and many more.
+However, RNNs suffer from the problem of vanishing gradients, which hampers learning of long data sequences. The gradients carry information used in the RNN parameter update and when the gradient becomes smaller and smaller, the parameter updates become insignificant which means no real learning is done.
+Let’s have a short reminder of how RNNs look like. We will work with a simple single hidden layer RNN with a single output sequence. The network looks like this:
+
+The network has an input sequence of vectors [x(1), x(2),…, x(k)], at time step t the network has an input vector x(t). Past information and learned knowledge is encoded in the network state vectors [c(1), c(2),…, c(k-1)], at time step t the network has an input state vector c(t-1). The input vector x(t) and the state vector c(t-1) are concatenated to comprise the complete input vector at time step t, [c(t-1), x(t)] .
+The network has two weight matrices: Wrec and Win connecting c(t-1) and x(t), the two parts of the input vector [c(t-1), x(t)], to the hidden layer. For simplicity, we leave out the bias vectors in our computations, and denote W = [Wrec, Win].
+The sigmoid function is used as the activation function in the hidden layer.
+The network outputs a single vector at the last time step (RNNs can output a vector on each time step, but we’ll use this simpler model).
+Backpropagation through time (BPTT) in RNNs
+After the RNN outputs the prediction vector h(k), we compute the prediction error E(k) and use the Back Propagation Through time algorithm to compute the gradient
+
+The gradient of the error term in an RNN
+The gradient is used to update the model parameters by:
+
+And we continue the learning process using the Gradient Descent (GD) algorithm (we use the basic version of the GD in this work).
+Say we have learning task that includes T time steps, the gradient of the error on the k time step is given by:
+
+Notice that since W=[Wrec, Win], c(t) can be written as:
+
+Compute the derivative of c(t) and get:
+
+Plug (2) into (1) and get our backpropagated gradient
+
+The last expression tends to vanish when k is large, this is due to the derivative of the tanh activation function which is smaller than 1.
+The product of derivatives can also explode if the weights Wrec are large enough to overpower the smaller tanh derivative, this is known as the exploding gradient problem.
+We have:
+
+So for some time step k:
+
+And our complete error gradient will vanish
+
+The network’s weights update will be:
+
+And no significant learning will be done in reasonable time.
+How LSTMs solve this?
+I recommend reading Colah’s blog for an in-depth review of LSTMs since we are only going to have a short reminder here.
+An LSTM network has an input vector [h(t-1),x(t)] at time step t. The network cell state is denoted by c(t). The output vectors passed through the network between consecutive time steps t, t+1 are denoted by h(t).
+
+LSTM network cells at time steps t-1, t, t+1
+an LSTM network has three gates that update and control the cell states, these are the forget gate, input gate and output gate. The gates use hyperbolic tangent and sigmoid activation functions.
+The forget gate controls what information in the cell state to forget, given new information than entered the network.
+
+The LSTM forget gate update of the cell state
+The forget gate’s output is given by:
+
+The input gate controls what new information will be encoded into the cell state, given the new input information.
+
+The LSTM input gate update of the cell state
+The input gate’s output has the form:
+
+and is equal to the element-wise product of the outputs of the two fully connected layers:
+
+
+The output gate controls what information encoded in the cell state is sent to the network as input in the following time step, this is done via the output vector h(t).
+
+The LSTM output gate’s action on the cell state
+The output gate’s activations are given by:
+
+and the cell’s output vector is given by:
+
+The LSTM cell state
+The long term dependencies and relations are encoded in the cell state vectors and it’s the cell state derivative that can prevent the LSTM gradients from vanishing. The LSTM cell state has the form:
+
+Backpropagation through time in LSTMs
+As in the RNN model, our LSTM network outputs a prediction vector h(k) on the k-th time step. The knowledge encoded in the state vectors c(t) captures long-term dependencies and relations in the sequential data.
+The length of the data sequences can be hundreds and even thousands of time steps, making it extremely difficult to learn using a basic RNN.
+We compute the gradient used to update the network parameters, the computation is done over T time steps.
+
+Backpropagating through time for gradient computation
+As in RNNs, the error term gradient is given by the following sum of T gradients:
+
+The gradient of the error in an LSTM
+For the complete error gradient to vanish, all of these T sub gradients need to vanish. If we think of (3) as a series of functions, then by definition, this series converges to zero if the sequence of its partial sums tends to zero, so
+
+if the series of partial sums
+
+where
+
+tends to zero.
+So if we want (3) not to vanish, our network needs to increase the likelihood that at least some of these sub gradients will not vanish, in other words, make the series of sub gradients in (3) not converge to zero.
+The error gradients in an LSTM network
+The gradient of the error for some time step k has the form:
+
+As we have seen, the following product causes the gradients to vanish:
+
+In an LTSM, the state vector c(t), has the form:
+
+which can be written compactly as
+
+Notice that the state vector c(t) is a function of the following elements, which should be taken into account when computing the derivative during backpropagation:
+
+Compute the derivative of (5) and get:
+
+We compute (detailed computations are given in the end of the article) the four derivative terms and write:
+
+Denote the four elements comprising the derivative of the cell state by:
+
+We write the additive gradient as:
+
+Plug (6) into (4) and get the LSTM states gradient:
+
+Preventing the error gradients from vanishing
+Notice that the gradient contains the forget gate’s vector of activations, which allows the network to better control the gradients values, at each time step, using suitable parameter updates of the forget gate. The presence of the forget gate’s activations allows the LSTM to decide, at each time step, that certain information should not be forgotten and to update the model’s parameters accordingly.
+Let’s go over how this property helps us. Say that for some time step k<T, we have that:
+
+Then for the gradient not to vanish, we can find a suitable parameter update of the forget gate at time step k+1 such that:
+
+It is the presence of the forget gate’s vector of activations in the gradient term along with additive structure which allows the LSTM to find such a parameter update at any time step, and this yields:
+
+and the gradient doesn’t vanish.
+Another important property to notice is that the cell state gradient is an additive function made up from four elements denoted A(t), B(t), C(t), D(t). This additive property enables better balancing of gradient values during backpropagation. The LSTM updates and balances the values of the four components making it more likely the additive expression does not vanish.
+For example, say that for every t in {2,3,…,k} we take the following four neighbourhoods of values as a balancing combination in our gradient:
+
+which yields:
+
+and the product does not vanish.
+This additive property is different from the RNN case where the gradient contained a single element inside the product. In RNNs, the sum in (3) is made from expressions with a similar behaviour that are likely to all be in [0,1] which causes vanishing gradients.
+In LSTMs, however, the presence of the forget gate, along with the additive property of the cell state gradients, enables the network to update the parameter in such a way that the different sub gradients in (3) do not necessarily agree and behave in a similar manner, making it less likely that all of the T gradients in (3) will vanish, or in other words, the series of functions does not converge to zero:
+
+and our gradients do not vanish.
+As mentioned briefly, the RNN gradients can also explode if the sum in (3) is made up from expressions with a similar behaviour that are all significantly greater than 1.
+Summing up, we have seen that RNNs suffer from vanishing gradients and caused by long series of multiplications of small values, diminishing the gradients and causing the learning process to become degenerate. In a analogues way, RNNs suffer from exploding gradients affected from large gradient values and hampering the learning process.
+LSTMs solve the problem using a unique additive gradient structure that includes direct access to the forget gate’s activations, enabling the network to encourage desired behaviour from the error gradient using frequent gates update on every time step of the learning process.
