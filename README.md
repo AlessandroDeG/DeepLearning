@@ -1,6 +1,8 @@
 # DeepLearning
 
-Assignments for the DeepLearning class at Usi. Thanks to Prof Kazuki Irie for a nice course.
+Assignments for the DeepLearning class at Usi, implemented using pytorch.
+
+Thanks to Prof Kazuki Irie for a nice course.
 
 **Includes:**
 
